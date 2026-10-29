@@ -358,7 +358,13 @@ function setupHostHandlers() {
     if (G.mkey === id) dispatch({ e: 'mkey', holder: null });
     if (G.deskUser === id) dispatch({ e: 'desk', by: null });
   });
-  Net.on('pos', (d, id) => { Hs.poses = Hs.poses || {}; Hs.poses[id] = d; });
+  Net.on('pos', (d, id) => {
+    Hs.poses = Hs.poses || {};
+    Hs.poses[id] = d;
+    // The host does not receive its own `poses` broadcast, so apply each
+    // guest pose locally as soon as it arrives.
+    poseIn(id, d);
+  });
   Net.on('act', (d, id) => hostAct(id, d));
 }
 function setupClientHandlers() {
