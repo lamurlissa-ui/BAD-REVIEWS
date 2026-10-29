@@ -44,6 +44,7 @@ kbd{font:400 12px var(--f-mono);border:1px solid rgba(236,226,204,.45);border-bo
 .join-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
 .join-row input{font:700 18px var(--f-mono);letter-spacing:.3em;text-transform:uppercase;width:150px;padding:12px 14px;background:rgba(9,8,11,.6);border:1.5px solid rgba(236,226,204,.4);color:var(--paper);border-radius:2px}
 .menu-msg{margin:14px 0 0;font-size:13px;line-height:1.5;color:var(--bad);max-width:520px}
+.save-note{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--brass);max-width:560px}
 .how{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:20px 0 0;font-size:13px;color:var(--mute);align-items:center}
 .how dt{white-space:nowrap}.how dd{margin:0}
 .demo-note{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:max(22px,env(safe-area-inset-top,0px));font-size:11px;color:var(--mute);letter-spacing:.14em;text-transform:uppercase;margin:0;text-align:right}
@@ -84,6 +85,13 @@ fieldset{border:0;padding:0;margin:0;min-width:0}
 .lobby p{margin:0;font-size:14px;line-height:1.5;color:var(--mute)}
 .check{display:flex;gap:10px;align-items:center;font-size:14px;cursor:pointer}
 .check input{width:18px;height:18px;accent-color:var(--neon)}
+
+/* pause */
+#pause{display:flex;align-items:center;justify-content:center;background:rgba(5,4,6,.84);z-index:40}
+.pause-card{width:min(460px,100%);padding:28px;border:1px solid rgba(236,226,204,.25);background:rgba(9,8,11,.96);box-shadow:0 28px 80px rgba(0,0,0,.65);display:flex;flex-direction:column;gap:18px}
+.pause-card h2{font:900 clamp(30px,7vw,48px)/1 var(--f-display);margin:0}
+.pause-card p{margin:0;color:var(--mute);font-size:13px;line-height:1.55}
+.pause-actions{display:flex;flex-direction:column;align-items:stretch;gap:10px}
 
 /* intro */
 #intro{background:#050406;display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -202,14 +210,17 @@ blockquote{margin:0;font:500 22px/1.25 var(--f-hand);color:var(--pen)}
 
 <section id="menu" class="screen" hidden>
   <div class="menu-inner">
-    <p class="eyebrow">Кооперативный хоррор · ночь 1</p>
+    <p class="eyebrow" id="menuEyebrow">Кооперативный хоррор · ночь 1</p>
     <h1 class="logo"><span>BAD</span><span>RE<span class="v">V</span>IEWS</span></h1>
-    <p class="rating"><span class="stars">★<span class="dim">★★★★</span></span>&nbsp; 1,2 · Отель «Уют», 214-й км</p>
+    <p class="rating"><span class="stars">★<span class="dim">★★★★</span></span>&nbsp; <span id="menuRating">1,20</span> · Отель «Уют», 214-й км</p>
     <div class="menu-actions">
-      <button id="bSolo" class="btn primary" type="button">Играть одному</button>
+      <button id="bContinue" class="btn primary" type="button" hidden>Продолжить</button>
+      <button id="bReconnect" class="btn primary" type="button" hidden>Вернуться в комнату</button>
+      <button id="bSolo" class="btn" type="button">Новая игра</button>
       <button id="bHost" class="btn" type="button">Создать комнату</button>
       <button id="bHow" class="btn" type="button" aria-expanded="false" aria-controls="how">Управление</button>
     </div>
+    <p id="saveNote" class="save-note" hidden></p>
     <div class="join-row">
       <label class="eyebrow" for="joinCode" style="align-self:center">Код друга</label>
       <input id="joinCode" maxlength="4" autocomplete="off" spellcheck="false" placeholder="ABCD">
@@ -225,7 +236,7 @@ blockquote{margin:0;font:500 22px/1.25 var(--f-hand);color:var(--pen)}
       <dt>Мышь</dt><dd>смотреть (кликни по экрану)</dd>
     </dl>
   </div>
-  <p class="demo-note">Ночь 1 · 1–5 игроков</p>
+  <p class="demo-note" id="demoNote">Ночь 1 · 1–5 игроков</p>
 </section>
 
 <section id="creator" class="screen" hidden>
@@ -264,7 +275,7 @@ blockquote{margin:0;font:500 22px/1.25 var(--f-hand);color:var(--pen)}
 <section id="hud" hidden>
   <div class="obj"><span class="k">Цель</span><span id="objText"></span></div>
   <div class="meta">
-    <div class="meta-row"><span>Ночь 1</span><span id="clock">23:00</span><span class="st">★ 1,2</span><span id="money">0 ₽</span></div>
+    <div class="meta-row"><span id="hudNight">Ночь 1</span><span id="clock">23:00</span><span class="st" id="hudRating">★ 1,20</span><span id="money">0 ₽</span></div>
     <ul id="tasks"></ul>
   </div>
   <div id="inv"></div>
@@ -273,6 +284,18 @@ blockquote{margin:0;font:500 22px/1.25 var(--f-hand);color:var(--pen)}
   <div id="toast" class="toast" hidden></div>
   <div id="lockHint" class="lockhint" hidden>Кликни, чтобы управлять мышью</div>
   <div id="keysHint" class="keyshint">WASD — идти · Shift — бежать · C — присесть · E — действие · F — фонарик</div>
+</section>
+
+<section id="pause" class="screen" hidden>
+  <div class="pause-card">
+    <p class="eyebrow">Ночная смена приостановлена</p>
+    <h2>Пауза</h2>
+    <p id="pauseNote">Игра сохранена. Можно закрыть вкладку и продолжить позже.</p>
+    <div class="pause-actions">
+      <button id="bResume" class="btn primary" type="button">Продолжить</button>
+      <button id="bPauseMenu" class="btn" type="button">Сохранить и выйти в главное меню</button>
+    </div>
+  </div>
 </section>
 <div id="sub" hidden><b id="subWho"></b><span id="subText"></span></div>
 
@@ -300,12 +323,12 @@ blockquote{margin:0;font:500 22px/1.25 var(--f-hand);color:var(--pen)}
 
 <section id="morning" class="screen" hidden>
   <div class="mo">
-    <p class="eyebrow">06:00 · Отзывы за ночь 1</p>
+    <p class="eyebrow" id="moEyebrow">06:00 · Отзывы за ночь 1</p>
     <h2>Утро</h2>
     <div class="mo-grid" id="moReviews"></div>
     <div class="mo-stats" id="moStats"></div>
     <div class="mo-note" id="moNote"></div>
-    <div class="menu-actions"><button id="bMenu" class="btn primary" type="button">В главное меню</button></div>
+    <div class="menu-actions"><button id="bNextNight" class="btn primary" type="button" disabled>Ночь 2 — в разработке</button><button id="bMenu" class="btn" type="button">Сохранить и выйти</button></div>
   </div>
 </section>
 
@@ -317,6 +340,7 @@ blockquote{margin:0;font:500 22px/1.25 var(--f-hand);color:var(--pen)}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="js/config.js"></script>
 <script src="js/base.js"></script>
 <script src="js/world.js"></script>
 <script src="js/net.js"></script>

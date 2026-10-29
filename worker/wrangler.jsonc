@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bad-reviews-turn",
+  "main": "turn-credentials.js",
+  "compatibility_date": "2026-10-29",
+  "vars": {
+    "ALLOWED_ORIGIN": "https://lamurlissa-ui.github.io"
+  }
+}

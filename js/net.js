@@ -15,8 +15,30 @@ const Net = {
 const netAvailable = () => typeof window.Peer === 'function' && typeof RTCPeerConnection !== 'undefined';
 function makeCode() { const a = 'АБВГДЕЖИКЛМНПРСТУФХЦЧШ'; const l = 'ABVGDEZIKLMNPRSTUFHCQW'; let c = ''; for (let i = 0; i < 4; i++) c += l[Math.floor(Math.random() * l.length)]; return c; }
 
-function netHost(cb) {
-  const code = makeCode(); Net.code = code;
+let peerOptionsPromise = null;
+function peerOptions() {
+  if (peerOptionsPromise) return peerOptionsPromise;
+  peerOptionsPromise = (async () => {
+    const endpoint = window.BAD_REVIEWS_CONFIG && window.BAD_REVIEWS_CONFIG.turnCredentialsUrl;
+    // Пока TURN не настроен, оставляем PeerJS ровно с его штатной
+    // конфигурацией — так подготовка сервиса не меняет текущую игру.
+    if (!endpoint) return { debug: 1 };
+    const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 7000);
+    try {
+      const res = await fetch(endpoint, { method: 'GET', mode: 'cors', credentials: 'omit', signal: ctrl.signal });
+      if (!res.ok) throw new Error('TURN HTTP ' + res.status);
+      const data = await res.json();
+      if (!data || !Array.isArray(data.iceServers) || !data.iceServers.some(x => String([].concat(x.urls || []).join(' ')).startsWith('turn'))) throw new Error('TURN credentials missing');
+      return { debug: 1, config: { iceServers: data.iceServers, sdpSemantics: 'unified-plan' } };
+    } catch (e) {
+      console.error('TURN credentials unavailable', e); throw { type: 'turn-unavailable', cause: e };
+    } finally { clearTimeout(timer); }
+  })().catch(e => { peerOptionsPromise = null; throw e; });
+  return peerOptionsPromise;
+}
+
+function netHost(cb, preferredCode) {
+  const code = /^[A-Z]{4}$/.test(preferredCode || '') ? preferredCode : makeCode(); Net.code = code;
   if (Net.local) {
     const id = PREFIX + code; Net.id = id; Net.mode = 'host';
     const bc = new BroadcastChannel('br-' + code); Net.bc = bc;
@@ -29,7 +51,8 @@ function netHost(cb) {
     addEventListener('beforeunload', () => Net.broadcast('hostgone', {}));
     setTimeout(() => cb(null, code), 50); return;
   }
-  const peer = new Peer(PREFIX + code, { debug: 1 }); Net.peer = peer;
+  peerOptions().then(options => {
+  const peer = new Peer(PREFIX + code, options); Net.peer = peer;
   peer.on('open', id => { Net.id = id; Net.mode = 'host'; cb(null, code); });
   peer.on('connection', conn => {
     conn.on('open', () => { Net.conns.set(conn.peer, conn); });
@@ -39,6 +62,7 @@ function netHost(cb) {
   peer.on('call', voiceAnswer);
   peer.on('error', e => { if (Net.mode !== 'host') cb(e); else console.warn(e); });
   peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) {} });
+  }).catch(cb);
 }
 function netJoin(code, cb) {
   code = code.trim().toUpperCase(); Net.code = code; const hostId = PREFIX + code;
@@ -50,7 +74,8 @@ function netJoin(code, cb) {
     Net.host.send({ t: '__hello' }); addEventListener('beforeunload', () => Net.host.send({ t: '__bye' }));
     setTimeout(() => cb(null), 50); return;
   }
-  const peer = new Peer({ debug: 1 }); Net.peer = peer; let done = false;
+  peerOptions().then(options => {
+  const peer = new Peer(options); Net.peer = peer; let done = false;
   const fail = e => { if (!done) { done = true; cb(e); } };
   peer.on('open', id => {
     Net.id = id;
@@ -62,11 +87,13 @@ function netJoin(code, cb) {
   });
   peer.on('call', voiceAnswer);
   peer.on('error', e => { if (Net.mode !== 'client') fail(e); else console.warn(e); });
+  }).catch(cb);
 }
 function netErrorText(e) {
   const t = e && e.type;
   if (t === 'peer-unavailable' || t === 'timeout') return 'Комната не найдена. Проверь код и что хост не закрыл вкладку.';
   if (t === 'unavailable-id') return 'Такой код уже занят. Попробуй ещё раз.';
+  if (t === 'turn-unavailable') return 'Не удалось получить защищённый маршрут к комнате. Обнови страницу и попробуй ещё раз.';
   if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') return 'Нет связи с сервером комнат. Сетевая игра работает только на сайте игры (GitHub Pages), не в превью.';
   if (t === 'browser-incompatible') return 'Этот браузер не поддерживает игру по сети. Попробуй Chrome.';
   return 'Не получилось подключиться' + (t ? ` (${t})` : '') + '.';
