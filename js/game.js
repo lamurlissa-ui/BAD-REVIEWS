@@ -23,6 +23,63 @@ try { const s = localStorage.getItem('br-char'); if (s) C = JSON.parse(s); } cat
 if (!C || !C.name) C = randomChar();
 const saveChar = () => { try { localStorage.setItem('br-char', JSON.stringify(C)); } catch (e) {} };
 
+/* ---------- campaign save ---------- */
+const SAVE_KEY = 'bad-reviews-save-v2';
+const CLIENT_SESSION_KEY = 'bad-reviews-client-v1';
+const SAVE_VERSION = 2;
+const freshCampaign = mode => ({ version: SAVE_VERSION, mode, stage: 'ready', night: 1, completedNights: [], rating: 1.2, reviews: 318, money: 0, short: false, checkpoint: null, lastResult: null, updatedAt: Date.now() });
+function readCampaign() {
+  try {
+    const x = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    return x && x.version === SAVE_VERSION && x.night >= 1 ? x : null;
+  } catch (e) { return null; }
+}
+let campaign = readCampaign();
+let clientSession = (() => { try { return JSON.parse(localStorage.getItem(CLIENT_SESSION_KEY) || 'null'); } catch (e) { return null; } })();
+const clientToken = () => { try { let t = localStorage.getItem('bad-reviews-player-token'); if (!t) { t = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now(); localStorage.setItem('bad-reviews-player-token', t); } return t; } catch (e) { return Math.random().toString(36).slice(2); } };
+function writeClientSession(pose) {
+  if (Net.mode !== 'client' || !Net.code) return;
+  clientSession = { code: Net.code, token: clientToken(), char: C, pose: pose || (S === 'play' ? myPose() : null), updatedAt: Date.now() };
+  try { localStorage.setItem(CLIENT_SESSION_KEY, JSON.stringify(clientSession)); } catch (e) {}
+  refreshMenuSave();
+}
+function clearClientSession() { clientSession = null; try { localStorage.removeItem(CLIENT_SESSION_KEY); } catch (e) {} refreshMenuSave(); }
+let CURRENT_NIGHT = campaign ? campaign.night : 1;
+let currentRating = campaign ? campaign.rating : 1.2;
+let currentReviews = campaign ? campaign.reviews : 318;
+let resumePending = false;
+function writeCampaign() {
+  if (!campaign || !Net.isHost) return;
+  campaign.updatedAt = Date.now();
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(campaign)); } catch (e) { console.warn('Не удалось сохранить смену', e); }
+  refreshMenuSave();
+}
+function clearCampaign() { campaign = null; try { localStorage.removeItem(SAVE_KEY); } catch (e) {} refreshMenuSave(); }
+const ratingText = n => Number(n || 1.2).toFixed(2).replace('.', ',');
+function refreshMenuSave() {
+  const has = !!campaign;
+  $('#bContinue').hidden = !has;
+  $('#bContinue').textContent = campaign && campaign.stage === 'complete' ? 'Посмотреть итоги' : 'Продолжить';
+  $('#saveNote').hidden = !has;
+  $('#bReconnect').hidden = !clientSession;
+  if (clientSession) $('#bReconnect').textContent = `Вернуться в комнату ${clientSession.code}`;
+  if (!has) {
+    $('#menuEyebrow').textContent = 'Кооперативный хоррор · ночь 1';
+    $('#menuRating').textContent = '1,20';
+    $('#demoNote').textContent = 'Ночь 1 · 1–5 игроков';
+    return;
+  }
+  const inShift = campaign.stage === 'play' && campaign.checkpoint;
+  $('#menuEyebrow').textContent = `Кооперативный хоррор · ночь ${campaign.night}`;
+  $('#menuRating').textContent = ratingText(campaign.rating);
+  $('#demoNote').textContent = `Ночь ${campaign.night} · 1–5 игроков`;
+  $('#saveNote').textContent = inShift
+    ? `Сохранение: ночь ${campaign.night}, ${campaign.checkpoint.clock || 'до полуночи'} · ${ratingText(campaign.rating)} ★`
+    : campaign.stage === 'complete'
+      ? `Ночь 1 пройдена · ${ratingText(campaign.rating)} ★ · продолжение в разработке`
+      : `Сохранение готово · ночь ${campaign.night} · ${ratingText(campaign.rating)} ★`;
+}
+
 /* ================= STATE ================= */
 let S = 'loading', SEED = 1, NIGHT_LEN = 840, worldBuilt = false;
 let G = null; const Hs = {}; // G = shared state (same on every client), Hs = host-only
@@ -188,9 +245,36 @@ $('#cForm').addEventListener('submit', e => {
 /* ================= MENU / LOBBY ================= */
 const menuMsg = t => { const m = $('#menuMsg'); m.textContent = t || ''; m.hidden = !t; };
 $('#bHow').onclick = () => { const h = $('#how'); h.hidden = !h.hidden; $('#bHow').setAttribute('aria-expanded', String(!h.hidden)); };
-$('#bSolo').onclick = () => goCreator('solo');
-$('#bHost').onclick = () => { if (!Net.local && !netAvailable()) { menuMsg('Сетевая игра здесь недоступна. Открой игру на её сайте (GitHub Pages).'); return; } goCreator('host'); };
+function confirmNewCampaign(mode) {
+  if (campaign && !confirm('Начать новую кампанию? Текущее сохранение будет заменено.')) return false;
+  campaign = freshCampaign(mode); resumePending = false; writeCampaign(); return true;
+}
+$('#bSolo').onclick = () => { if (confirmNewCampaign('solo')) goCreator('solo'); };
+$('#bHost').onclick = () => {
+  if (!Net.local && !netAvailable()) { menuMsg('Сетевая игра здесь недоступна. Открой игру на её сайте (GitHub Pages).'); return; }
+  if (confirmNewCampaign('host')) goCreator('host');
+};
 $('#bJoin').onclick = () => { const c = $('#joinCode').value.trim(); if (c.length < 4) { menuMsg('Введи код из четырёх букв.'); return; } if (!Net.local && !netAvailable()) { menuMsg('Сетевая игра здесь недоступна. Открой игру на её сайте (GitHub Pages).'); return; } goCreator('join'); };
+$('#bContinue').onclick = async () => {
+  if (!campaign) return;
+  aInit(); resumePending = true; C = campaign.character || C; saveChar();
+  await fade(1, 350); show('#menu', false);
+  if (campaign.stage === 'complete' && campaign.lastResult) {
+    Net.mode = campaign.mode === 'host' ? 'host' : 'solo';
+    showMorning(campaign.lastResult, true); fade(0, 350); return;
+  }
+  if (campaign.mode === 'host') enterLobby('host');
+  else {
+    Net.mode = 'solo'; Net.id = 'solo'; players = { solo: { id: 'solo', name: C.name, char: C, idx: 0 } };
+    startGame(campaignConfig());
+  }
+  fade(0, 350);
+};
+$('#bReconnect').onclick = async () => {
+  if (!clientSession) return;
+  C = clientSession.char || C; saveChar(); $('#joinCode').value = clientSession.code;
+  aInit(); await fade(1, 300); show('#menu', false); enterLobby('join'); fade(0, 300);
+};
 $('#joinCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('#bJoin').click(); });
 function rosterList() { return Object.values(players).sort((a, b) => a.idx - b.idx); }
 function renderLobby() {
@@ -210,35 +294,60 @@ function enterLobby(mode) {
     netHost((err, code) => {
       if (err) { $('#lobbyMsg').textContent = netErrorText(err); return; }
       $('#lobbyEyebrow').textContent = 'Код комнаты — продиктуй друзьям'; $('#lobbyCode').textContent = code; $('#bStart').disabled = false;
+      if (campaign) { campaign.roomCode = code; writeCampaign(); }
       players = { [Net.id]: { id: Net.id, name: C.name, char: C, idx: 0 } }; renderLobby(); setupHostHandlers();
-    });
+    }, resumePending && campaign ? campaign.roomCode : null);
     return;
   }
   $('#lobbyEyebrow').textContent = 'Подключаемся…'; $('#lobbyCode').textContent = $('#joinCode').value.trim().toUpperCase();
   netJoin($('#joinCode').value, err => {
     if (err) { $('#lobbyMsg').textContent = netErrorText(err); return; }
-    $('#lobbyEyebrow').textContent = 'Ты в комнате. Ждём, когда хост начнёт смену'; setupClientHandlers(); Net.toHost('join', { name: C.name, char: C });
+    $('#lobbyEyebrow').textContent = 'Ты в комнате. Ждём, когда хост начнёт смену'; setupClientHandlers();
+    writeClientSession(clientSession && clientSession.code === Net.code ? clientSession.pose : null);
+    Net.toHost('join', { name: C.name, char: C, token: clientToken(), pose: clientSession && clientSession.code === Net.code ? clientSession.pose : null });
   });
 }
-$('#bLeave').onclick = () => location.reload();
+$('#bLeave').onclick = () => { if (Net.mode === 'client') clearClientSession(); location.reload(); };
 $('#micBox').addEventListener('change', async e => {
   if (!e.target.checked) return;
   try { await voiceEnable(); $('#lobbyMsg').textContent = 'Микрофон включён. Во время игры V — выключить звук.'; }
   catch (err) { e.target.checked = false; $('#lobbyMsg').textContent = 'Не получилось включить микрофон. Разреши доступ в браузере.'; }
 });
 $('#bStart').onclick = () => {
-  const cfg = { seed: Math.floor(Math.random() * 1e9), short: $('#shortBox').checked, players };
+  const cfg = resumePending ? campaignConfig(players) : newNightConfig(players, $('#shortBox').checked);
+  resumePending = false;
   if (Net.mode === 'host') Net.broadcast('start', cfg);
   startGame(cfg);
 };
 
+function newNightConfig(ps, short = false) {
+  if (!campaign) campaign = freshCampaign(Net.mode === 'host' ? 'host' : 'solo');
+  campaign.mode = Net.mode === 'host' ? 'host' : 'solo'; campaign.short = !!short; campaign.character = C;
+  campaign.stage = 'play'; campaign.checkpoint = null;
+  return { seed: Math.floor(Math.random() * 1e9), short: campaign.short, players: ps || players, night: campaign.night, rating: campaign.rating, reviews: campaign.reviews, money: campaign.money };
+}
+function campaignConfig(ps) {
+  const cp = campaign && campaign.checkpoint;
+  return { seed: cp ? cp.seed : Math.floor(Math.random() * 1e9), short: campaign && campaign.short, players: ps || players, night: campaign ? campaign.night : 1, rating: campaign ? campaign.rating : 1.2, reviews: campaign ? campaign.reviews : 318, money: campaign ? campaign.money : 0, checkpoint: cp || null };
+}
+
 /* ---------- net handlers ---------- */
 function setupHostHandlers() {
   Net.on('join', (d, id) => {
-    if (G.started) { Net.sendTo(id, 'full', {}); return; }
-    const used = Object.values(players).map(p => p.idx); let idx = 1; while (used.includes(idx)) idx++;
+    const previous = d.token && (Object.values(players).find(p => p.token === d.token)
+      || (campaign && campaign.checkpoint && (campaign.checkpoint.roster || []).find(p => p.token === d.token)));
+    if (previous && previous.id && previous.id !== id) { delete players[previous.id]; delete Hs.poses[previous.id]; if (avatars[previous.id]) { world.remove(avatars[previous.id].g); delete avatars[previous.id]; } }
+    const used = Object.values(players).map(p => p.idx); let idx = previous ? previous.idx : 1; while (!previous && used.includes(idx)) idx++;
     if (idx > 4) { Net.sendTo(id, 'full', {}); return; }
-    players[id] = { id, name: String(d.name || 'Гость').slice(0, 14), char: d.char, idx }; renderLobby(); Net.broadcast('roster', players);
+    players[id] = { id, name: String(d.name || 'Гость').slice(0, 14), char: d.char, idx, token: d.token || null };
+    if (G.started && S === 'play') {
+      if (d.pose) Hs.poses[id] = d.pose;
+      makeAvatar(id); const checkpoint = makeCheckpoint();
+      Net.sendTo(id, 'resume', { seed: SEED, short: NIGHT_LEN < 500, players, night: CURRENT_NIGHT, rating: currentRating, reviews: currentReviews, money: G.money, checkpoint });
+      Net.broadcast('playerJoin', { player: players[id] }, id); dispatch({ e: 'toast', text: `${players[id].name} вернулся в смену.` }); return;
+    }
+    if (G.started) { delete players[id]; Net.sendTo(id, 'full', {}); return; }
+    renderLobby(); Net.broadcast('roster', players);
     sfx.ui();
   });
   Net.on('leave', (d, id) => {
@@ -256,39 +365,125 @@ function setupClientHandlers() {
   Net.on('roster', d => { players = d; renderLobby(); });
   Net.on('full', () => { $('#lobbyMsg').textContent = 'Комната уже заполнена или смена началась.'; });
   Net.on('start', cfg => startGame(cfg));
+  Net.on('resume', cfg => { writeClientSession(); startGame(cfg); });
+  Net.on('playerJoin', d => { const p = d && d.player; if (!p) return; players[p.id] = p; if (S === 'play' && !avatars[p.id]) makeAvatar(p.id); });
   Net.on('ev', ev => applyEv(ev));
   Net.on('poses', d => { for (const id in d) if (id !== Net.id) poseIn(id, d[id]); });
   Net.on('st', d => stateIn(d));
-  Net.on('hostgone', () => { toast('Хост закрыл игру. Возвращаемся в меню…', 5); setTimeout(() => location.reload(), 4000); });
+  Net.on('hostgone', () => { writeClientSession(); toast('Хост отключился. Комната сохранена — можно вернуться, когда он снова её создаст.', 5); setTimeout(() => location.reload(), 4000); });
 }
 
 /* ================= START ================= */
 function startGame(cfg) {
   SEED = cfg.seed; NIGHT_LEN = cfg.short ? 360 : 840; players = cfg.players;
+  CURRENT_NIGHT = cfg.night || 1; currentRating = cfg.rating || 1.2; currentReviews = cfg.reviews || 318;
   myIdx = (players[Net.id] || { idx: 0 }).idx;
   G = freshG(); G.started = true; Hs.poses = {}; gameTime = 0; timers = []; anims = [];
+  G.money = cfg.money || 0;
   setupWorld(SEED); seedRng(SEED + 7);
   Hs.busRoom = buildArchive(SEED);
-  show('#lobby', false);
+  show('#lobby', false); show('#menu', false); show('#morning', false); show('#pause', false);
+  $('#hudNight').textContent = `Ночь ${CURRENT_NIGHT}`; $('#hudRating').textContent = `★ ${ratingText(currentRating)}`;
   for (const id in players) if (id !== Net.id) makeAvatar(id);
   if (Net.online) voiceConnectAll(Object.keys(players));
-  if (Net.isHost) hostInit();
-  startIntro();
+  if (campaign && Net.isHost) {
+    campaign.mode = Net.mode === 'host' ? 'host' : 'solo'; campaign.stage = 'play'; campaign.night = CURRENT_NIGHT;
+    campaign.rating = currentRating; campaign.reviews = currentReviews; campaign.money = G.money; campaign.short = !!cfg.short; campaign.character = C;
+  }
+  if (cfg.checkpoint) restoreCheckpoint(cfg.checkpoint);
+  else { if (Net.isHost) hostInit(); writeCampaign(); startIntro(); }
+}
+
+/* ---------- autosave / restore ---------- */
+const plain = x => JSON.parse(JSON.stringify(x));
+const vec = v => v ? [v.x, v.y, v.z] : null;
+const fromVec = a => a ? V3(a[0], a[1], a[2]) : null;
+let checkpointT = 0;
+function makeCheckpoint() {
+  const npcState = {};
+  for (const id in Hs.npcs) {
+    const n = Hs.npcs[id]; npcState[id] = {
+      x: n.x, y: n.y, z: n.z, yaw: n.yaw, speed: n.speed, moving: n.moving,
+      roomDoor: n.roomDoor || null, wander: n.wander == null ? null : n.wander, stare: !!n.stare,
+      path: (n.path || []).map(vec),
+    };
+  }
+  const mon = Hs.mon ? Object.assign({}, plain(Hs.mon), { goal: vec(Hs.mon.goal), path: (Hs.mon.path || []).map(vec) }) : null;
+  return {
+    version: SAVE_VERSION, seed: SEED, night: CURRENT_NIGHT, short: NIGHT_LEN < 500,
+    clock: fmtClock(G.clock), gameTime, rating: currentRating, reviews: currentReviews,
+    g: plain(G),
+    roster: Object.values(players).map(p => ({ id: p.id, token: p.token || null, idx: p.idx, name: p.name, char: p.char })),
+    playerByIndex: Object.fromEntries(Object.values(players).map(p => [p.idx, p.id === Net.id ? myPose() : (Hs.poses && Hs.poses[p.id])]).filter(x => x[1])),
+    world: {
+      doors: Object.fromEntries(Object.entries(doors).map(([id, d]) => [id, !!d.open])),
+      rooms: rooms.map(r => ({ num: r.num, occupant: r.occupant || null, unlocked: !!r.unlocked, light: !!r.light, radio: !!r.radio })),
+      containers: Object.fromEntries(Object.entries(containers).map(([id, c]) => [id, !!c.opened])),
+    },
+    host: Net.isHost ? {
+      nightT: Hs.nightT || 0, calls: plain(Hs.calls || []), sched: plain(Hs.sched || []), complaints: plain(Hs.complaints || []),
+      taskN: Hs.taskN || 0, dragged: Hs.dragged || 0, guestOrder: plain(Hs.guestOrder || []), npcs: npcState, mon,
+    } : null,
+  };
+}
+function saveCheckpoint(force = false) {
+  if (!Net.isHost || S !== 'play' || !campaign) return;
+  if (!force && checkpointT < 5) return;
+  checkpointT = 0; campaign.stage = 'play'; campaign.money = G.money; campaign.checkpoint = makeCheckpoint(); writeCampaign();
+}
+function restoreNpcDone(id, n) {
+  const g = G.guests[id]; if (!g) return null;
+  if (g.state === 'arriving') return () => { dispatch({ e: 'guestState', id, state: 'waiting' }); n.yaw = Math.PI; };
+  if (g.state === 'toRoom') return () => { const r = rooms.find(x => x.num === g.room); if (r && r.door.open) dispatch({ e: 'door', id: r.door.id, open: false }); dispatch({ e: 'guestState', id, state: 'inRoom' }); };
+  if (g.state === 'toSofa') return () => dispatch({ e: 'guestState', id, state: 'sofa' });
+  if (g.state === 'leaving') return () => dispatch({ e: 'guestState', id, state: 'outside' });
+  return null;
+}
+function restoreCheckpoint(cp) {
+  G = plain(cp.g); G.started = true; gameTime = cp.gameTime || 0; checkpointT = 0;
+  currentRating = cp.rating || currentRating; currentReviews = cp.reviews || currentReviews;
+  if (G.mkey && !players[G.mkey]) G.mkey = null;
+  if (G.deskUser && !players[G.deskUser]) G.deskUser = null;
+  for (const r0 of cp.world.rooms || []) { const r = rooms.find(x => x.num === r0.num); if (r) Object.assign(r, r0); }
+  for (const id in cp.world.doors || {}) if (doors[id]) setDoorOpen(doors[id], cp.world.doors[id], true);
+  for (const id in cp.world.containers || {}) if (containers[id]) { containers[id].opened = cp.world.containers[id]; if (containers[id].opened && containers[id].anim) containers[id].anim(1); }
+  for (const g of Object.values(G.guests || {})) {
+    makeNPC(g); const r = g.room && rooms.find(x => x.num === g.room);
+    if (g.state === 'inRoom' && r) { r.occupant = g.id; r.dnd.visible = true; seatNPC(g, r); }
+  }
+  if (Net.isHost) {
+    const h = cp.host || {}; Hs.nightT = h.nightT || G.clock * NIGHT_LEN; Hs.calls = h.calls || []; Hs.sched = h.sched || []; Hs.complaints = h.complaints || [];
+    Hs.taskN = h.taskN || 0; Hs.dragged = h.dragged || 0; Hs.guestOrder = h.guestOrder || []; Hs.frontCloseAt = 0; Hs.stT = 0; Hs.poseT = 0; Hs.poses = {};
+    Hs.npcs = {};
+    for (const id in h.npcs || {}) { const x = h.npcs[id]; const n = Object.assign({}, x, { path: (x.path || []).map(fromVec), done: null }); n.done = restoreNpcDone(id, n); Hs.npcs[id] = n; const o = npcs[id]; if (o) { o.g.position.set(n.x, n.y, n.z); o.g.rotation.y = n.yaw; o.tx = n.x; o.ty = n.y; o.tz = n.z; o.tyaw = n.yaw; } }
+    Hs.mon = h.mon ? Object.assign({}, h.mon, { goal: fromVec(h.mon.goal), path: (h.mon.path || []).map(fromVec) }) : null;
+  }
+  if (G.monster) { monObj = makeMonster(); const m = cp.host && cp.host.mon; monObj.position.set(m ? m.x : -11.1, m ? m.y : 0, m ? m.z : 2.2); world.add(monObj); monSound = loopSound('breath', monObj.position); }
+  W.masterKey.visible = G.mkey == null; if (G.power) W.lever.rotation.z = -0.6;
+  const pos = cp.playerByIndex && cp.playerByIndex[myIdx];
+  W.car.position.copy(drivePath.getPointAt(1)); W.car.lookAt(drivePath.getPointAt(0.99)); startPlay();
+  if (pos) { P.x = pos[0]; P.feet = pos[1]; P.z = pos[2]; yaw = pos[3]; pitch = pos[4]; flashOn = !!(pos[5] & 1); crouch = !!(pos[5] & 2); }
+  if (G.phone === 'ring') { G.phone = 'idle'; applyEv({ e: 'phone', state: 'ring' }); }
+  toast(`Смена восстановлена · ночь ${CURRENT_NIGHT}, ${fmtClock(G.clock)}`, 4);
+  writeCampaign();
 }
 
 /* ================= INTRO + DRIVE ================= */
-const CARDS = [
-  () => `<div class="ad"><p class="eyebrow">Объявления · Работа</p><h3>Требуется ночной персонал</h3><p>Отель «Уют», 214-й км. Проживание, питание, оплата наличными.</p><p>Опыт не нужен. Вопросов не задавать.</p><p class="tiny">Звонить после 23:00. Если ответят — не вешайте трубку.</p></div>`,
-  () => `<div class="reviews"><p class="eyebrow">Отель «Уют» · 318 отзывов</p><p class="big">★ 1,2</p><ul><li><span class="st">★☆☆☆☆</span>Ночью кто-то стучал. Изнутри шкафа. <i>— Галина</i></li><li><span class="st">★☆☆☆☆</span>Администратор улыбался слишком широко. Слишком. <i>— Денис</i></li><li><span class="st">★★☆☆☆</span>Номер 13 очень уютный. Не могу найти выход. Пишу из номера. <i>— Олег</i></li></ul></div>`,
-  () => `<div class="letter"><p>${Object.keys(players).length > 1 ? 'Команда' : esc(C.name)}, добро пожаловать.</p><p>Задача простая: за пять ночей поднять рейтинг до 4,5. Гости у нас… особенные. Селите их правильно.</p><p>Приезжайте к полуночи. Свет, скорее всего, будет выключен.</p><p class="sig">— Управляющий</p></div>`,
-  () => `<div class="chapter"><p class="eyebrow">Ночь 1</p><h3>Смена</h3><p>22:41 · трасса · 214-й км</p></div>`,
-];
-let cardI = 0, cardAuto = 0;
-function startIntro() { S = 'intro'; show('#intro', true); cardI = -1; nextCard(); }
-function nextCard() { if (S !== 'intro') return; clearTimeout(cardAuto); cardI++; if (cardI >= CARDS.length) { endIntro(); return; } sfx.tick(); $('#introCard').innerHTML = CARDS[cardI](); if (cardI === CARDS.length - 1) { $('#introHint').textContent = ''; cardAuto = setTimeout(nextCard, 2400); } else $('#introHint').textContent = 'Клик или пробел — дальше'; }
+let introCards = [], cardI = 0, cardAuto = 0;
+function cardsForNight() {
+  const chapter = () => `<div class="chapter"><p class="eyebrow">Ночь ${CURRENT_NIGHT}</p><h3>Смена</h3><p>22:41 · трасса · 214-й км</p></div>`;
+  return [
+    () => `<div class="ad"><p class="eyebrow">Объявления · Работа</p><h3>Требуется ночной персонал</h3><p>Отель «Уют», 214-й км. Проживание, питание, оплата наличными.</p><p>Опыт не нужен. Вопросов не задавать.</p><p class="tiny">Звонить после 23:00. Если ответят — не вешайте трубку.</p></div>`,
+    () => `<div class="reviews"><p class="eyebrow">Отель «Уют» · 318 отзывов</p><p class="big">★ 1,2</p><ul><li><span class="st">★☆☆☆☆</span>Ночью кто-то стучал. Изнутри шкафа. <i>— Галина</i></li><li><span class="st">★☆☆☆☆</span>Администратор улыбался слишком широко. Слишком. <i>— Денис</i></li><li><span class="st">★★☆☆☆</span>Номер 13 очень уютный. Не могу найти выход. Пишу из номера. <i>— Олег</i></li></ul></div>`,
+    () => `<div class="letter"><p>${Object.keys(players).length > 1 ? 'Команда' : esc(C.name)}, добро пожаловать.</p><p>Задача простая: за пять ночей поднять рейтинг до 4,5. Гости у нас… особенные. Селите их правильно.</p><p>Приезжайте к полуночи. Свет, скорее всего, будет выключен.</p><p class="sig">— Управляющий</p></div>`,
+    chapter,
+  ];
+}
+function startIntro() { S = 'intro'; show('#intro', true); introCards = cardsForNight(); cardI = -1; nextCard(); }
+function nextCard() { if (S !== 'intro') return; clearTimeout(cardAuto); cardI++; if (cardI >= introCards.length) { endIntro(); return; } sfx.tick(); $('#introCard').innerHTML = introCards[cardI](); if (cardI === introCards.length - 1) { $('#introHint').textContent = ''; cardAuto = setTimeout(nextCard, 2400); } else $('#introHint').textContent = 'Клик или пробел — дальше'; }
 async function endIntro() { S = 'wait'; await fade(1, 500); show('#intro', false); startDrive(); fade(0, 1300); }
 $('#intro').onclick = () => nextCard();
-$('#bSkip').onclick = e => { e.stopPropagation(); cardI = CARDS.length; clearTimeout(cardAuto); endIntro(); };
+$('#bSkip').onclick = e => { e.stopPropagation(); cardI = introCards.length; clearTimeout(cardAuto); endIntro(); };
 
 const V3 = (x, y, z) => new T.Vector3(x, y, z);
 const drivePath = new T.CatmullRomCurve3([V3(0, 0, 250), V3(0, 0, 120), V3(0, 0, 50), V3(-1.2, 0, 32), V3(-4, 0, 22), V3(-5.2, 0, 16.5)]);
@@ -528,7 +723,7 @@ function applyEv(ev) {
       else toast('Пусто. Только пыль и чей-то зуб.', 3);
       return;
     }
-    case 'leave': if (avatars[ev.id]) { world.remove(avatars[ev.id].g); delete avatars[ev.id]; } toast(`${ev.name} отключился.`, 3); return;
+    case 'leave': delete players[ev.id]; if (avatars[ev.id]) { world.remove(avatars[ev.id].g); delete avatars[ev.id]; } toast(`${ev.name} отключился.`, 3); return;
     case 'morning': showMorning(ev.res); return;
   }
 }
@@ -538,10 +733,15 @@ function hostInit() {
   Hs.nightT = 0; Hs.calls = []; Hs.sched = []; Hs.complaints = []; Hs.npcs = {}; Hs.frontCloseAt = 0; Hs.stT = 0; Hs.poseT = 0; Hs.taskN = 0; Hs.slamAt = 0;
   const types = rshuffle(Object.keys(GTYPES)).slice(0, 3);
   Hs.guestOrder = types;
-  [0.02, 0.2, 0.4].forEach((f, i) => Hs.sched.push({ f, fn: () => spawnGuest(types[i], i) }));
-  [0.13, 0.31, 0.5, 0.67].forEach((f, i) => Hs.sched.push({ f, fn: () => createTask(['towels', 'tap', 'noise', 'towels'][i]) }));
-  Hs.sched.push({ f: 0.5, fn: () => spawnMonster() });
+  [0.02, 0.2, 0.4].forEach((f, i) => Hs.sched.push({ f, kind: 'guest', type: types[i], index: i }));
+  [0.13, 0.31, 0.5, 0.67].forEach((f, i) => Hs.sched.push({ f, kind: 'task', task: ['towels', 'tap', 'noise', 'towels'][i] }));
+  Hs.sched.push({ f: 0.5, kind: 'monster' });
   Hs.mon = null;
+}
+function runScheduled(s) {
+  if (s.kind === 'guest') spawnGuest(s.type, s.index);
+  else if (s.kind === 'task') createTask(s.task);
+  else if (s.kind === 'monster') spawnMonster();
 }
 const MANAGER_BRIEF = [
   ['УПРАВЛЯЮЩИЙ', 'Слушайте все. Это управляющий. Включили свет — молодцы.', 1.2],
@@ -596,7 +796,7 @@ function createTask(kind) {
     who = nb ? 'НОМЕР ' + nb.num : 'ГОСТЬ'; line = `В номере ${r.num} кто-то включил радио. Там же никто не живёт?`; short = `№${r.num} · выключить радио`;
     dispatch({ e: 'radio', room: r.num, on: true }); dispatch({ e: 'unlock', room: r.num });
   } else {
-    if (!occ.length) { Hs.sched.push({ f: Hs.nightT / NIGHT_LEN + 0.06, fn: () => createTask(kind) }); return; }
+    if (!occ.length) { Hs.sched.push({ f: Hs.nightT / NIGHT_LEN + 0.06, kind: 'task', task: kind }); return; }
     r = pick(occ); who = 'НОМЕР ' + r.num;
     if (kind === 'towels') { line = pick(['Принесите полотенца. Много полотенец.', 'Полотенца. Срочно. Не спрашивайте зачем.']); short = `№${r.num} · полотенца (кладовая на этаже)`; }
     else { line = 'У нас течёт кран. Вода… тёплая. И красноватая.'; short = `№${r.num} · кран (гаечный ключ в «Служебном»)`; }
@@ -628,7 +828,7 @@ function hostUpdate(dt) {
   // clock + schedule
   if (G.clockOn && G.phase === 'night') {
     Hs.nightT += dt; G.clock = Hs.nightT / NIGHT_LEN;
-    for (let i = Hs.sched.length - 1; i >= 0; i--) if (G.clock >= Hs.sched[i].f) { const s = Hs.sched.splice(i, 1)[0]; s.fn(); }
+    for (let i = Hs.sched.length - 1; i >= 0; i--) if (G.clock >= Hs.sched[i].f) runScheduled(Hs.sched.splice(i, 1)[0]);
     for (let i = Hs.complaints.length - 1; i >= 0; i--) if (Hs.nightT >= Hs.complaints[i].at) { const c = Hs.complaints.splice(i, 1)[0]; complaint(c.gid); }
     for (const t of Object.values(G.tasks)) if (t.revealed && !t.done && !t.failed && t.deadline && Hs.nightT > t.deadline) dispatch({ e: 'task', t: Object.assign({}, t, { failed: true }) });
     if (G.clock >= 1) { morning(); return; }
@@ -706,7 +906,7 @@ function makeMonster() {
 /* ---------- morning ---------- */
 function morning() {
   G.phase = 'morning';
-  const res = { guests: [], dragged: Hs.dragged || 0, money: G.money, tasksDone: 0, tasksFailed: 0 };
+  const res = { night: CURRENT_NIGHT, previousRating: currentRating, previousReviews: currentReviews, guests: [], dragged: Hs.dragged || 0, money: G.money, tasksDone: 0, tasksFailed: 0 };
   for (const t of Object.values(G.tasks)) { if (t.done) res.tasksDone++; if (t.failed) res.tasksFailed++; }
   for (const g of Object.values(G.guests)) {
     const def = GTYPES[g.type]; let stars, text;
@@ -717,24 +917,34 @@ function morning() {
     res.guests.push({ name: def.name, stars, text, room: g.room });
   }
   const sum = res.guests.reduce((s, g) => s + g.stars, 0), n = res.guests.length;
-  res.rating = (318 * 1.2 + sum) / (318 + n);
+  res.reviews = currentReviews + n;
+  res.rating = (currentReviews * currentRating + sum) / Math.max(1, res.reviews);
   dispatch({ e: 'morning', res });
 }
-function showMorning(res) {
+function showMorning(res, fromSave = false) {
   S = 'morning'; G.phase = 'morning'; clearInterval(ringLoop);
+  currentRating = res.rating; currentReviews = res.reviews;
+  if (Net.isHost && !fromSave) {
+    if (!campaign) campaign = freshCampaign(Net.mode === 'host' ? 'host' : 'solo');
+    campaign.stage = 'complete'; campaign.night = 1; campaign.completedNights = [1]; campaign.rating = res.rating; campaign.reviews = res.reviews;
+    campaign.money = res.money; campaign.checkpoint = null; campaign.lastResult = res; campaign.character = C; writeCampaign();
+  }
   if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
   ['wind', 'hum', 'drone', 'eng'].forEach(k => setAmb(k, 0, 0.5)); if (monSound) monSound.stop(); for (const k in radios) radios[k].stop();
   fade(1, 1200).then(() => {
     show('#hud', false); show('#touch', false); hideSub();
     const star = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+    $('#moEyebrow').textContent = `06:00 · Отзывы за ночь ${res.night}`;
     $('#moReviews').innerHTML = res.guests.map(g => `<article class="review"><header><b>${esc(g.name)}</b><span class="rs">${star(g.stars)}</span></header><p>${esc(g.text)}</p><footer>${g.room ? 'Номер ' + g.room : 'Без номера'}</footer></article>`).join('');
     const r = res.rating.toFixed(2).replace('.', ',');
-    $('#moStats').innerHTML = `<div><b>${r} ★</b>рейтинг (был 1,20)</div><div><b>${res.tasksDone}/${res.tasksDone + res.tasksFailed}</b>заявок выполнено</div><div><b>${res.money} ₽</b>чаевые и находки</div><div><b>${res.dragged}</b>раз утащили</div>`;
-    $('#moNote').innerHTML = `<p>${res.rating > 1.22 ? 'Неплохо для первой ночи.' : 'Ну… вы пережили ночь.'} Но 318 старых отзывов новыми не перебить. Найдите тех, кто их писал. Они всё ещё здесь. — У.</p>`;
+    $('#moStats').innerHTML = `<div><b>${r} ★</b>рейтинг (был ${ratingText(res.previousRating)})</div><div><b>${res.tasksDone}/${res.tasksDone + res.tasksFailed}</b>заявок выполнено</div><div><b>${res.money} ₽</b>чаевые и находки</div><div><b>${res.dragged}</b>раз утащили</div>`;
+    $('#moNote').innerHTML = `<p>${res.rating > res.previousRating ? 'Рейтинг ползёт вверх. Медленно, но ползёт.' : 'Ну… вы пережили ночь.'} Следующая глава отеля ещё строится. Сохранение дождётся её вместе с вами. — У.</p>`;
+    $('#bNextNight').hidden = false; $('#bNextNight').disabled = true; $('#bNextNight').textContent = 'Ночь 2 — в разработке';
     show('#morning', true); fade(0, 800); setTimeout(() => sfx.bell(), 700);
   });
 }
-$('#bMenu').onclick = () => location.reload();
+$('#bNextNight').onclick = () => {};
+$('#bMenu').onclick = () => { writeCampaign(); location.reload(); };
 
 /* ================= NPCs + AVATARS ================= */
 function makeNPC(g) {
@@ -933,6 +1143,22 @@ window.openNote = (kind, i) => {
 function closeNote() { show('#note', false); uiOpen = null; }
 $('#note').onclick = () => { if (uiOpen === 'note') closeNote(); };
 
+/* ---------- pause menu ---------- */
+function openPause() {
+  if (S !== 'play' || uiOpen) return;
+  uiOpen = 'pause'; saveCheckpoint(true);
+  if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
+  $('#pauseNote').textContent = Net.mode === 'solo'
+    ? 'Смена сохранена и поставлена на паузу. Можно закрыть вкладку и продолжить позже.'
+    : Net.mode === 'host'
+      ? 'Смена сохранена. В кооперативе общая смена продолжается, пока открыто меню.'
+      : 'Общая смена хранится у хоста и продолжается, пока открыто меню.';
+  show('#pause', true);
+}
+function closePause() { if (uiOpen !== 'pause') return; show('#pause', false); uiOpen = null; }
+$('#bResume').onclick = closePause;
+$('#bPauseMenu').onclick = () => { saveCheckpoint(true); writeClientSession(); location.reload(); };
+
 /* ---------- check-in UI ---------- */
 let ckGuest = null, ckRoom = null;
 function openCheckin(gid) {
@@ -996,12 +1222,13 @@ function updateHUD(dt) {
 let menuT = 0, poseSendT = 0;
 function updateMenu(dt) { assignPool(); if (W.extG) { W.extG.visible = true; W.floorG[1].visible = W.floorG[2].visible = false; } menuT += dt; const a = Math.sin(menuT * 0.06) * 0.75; cam.position.set(Math.sin(a) * 30, 5.5 + Math.sin(menuT * 0.2) * 0.3, 9 + Math.cos(a) * 30); cam.lookAt(0, 9, 0); updateFlicker(dt); }
 function updatePlay(dt) {
-  gameTime += dt; runTimers(); runAnims(dt); updateDoors(dt); updateFlicker(dt);
+  gameTime += dt; checkpointT += dt; runTimers(); runAnims(dt); updateDoors(dt); updateFlicker(dt);
   updatePlayer(dt);
   if (Net.isHost) hostUpdate(dt);
   else { poseSendT += dt; if (poseSendT > 1 / 12) { poseSendT = 0; Net.toHost('pos', myPose()); } }
   updateAvatars(dt); updateNPCs(dt); updateMonsterView(dt); updateLights(); directorUpdate(dt); updateHUD(dt);
   updateListener(cam); voiceUpdate(avatarHead);
+  saveCheckpoint();
   if (G.silOnce !== true && Math.hypot(P.x - 4.6, P.z - 6) < 15 && !insideBuilding(P.x, P.z)) { G.silOnce = true; later(0.5, () => W.silWin.material = W.winM.dark); }
 }
 function updateMonsterView(dt) {
@@ -1021,7 +1248,7 @@ function loop(t) {
     else if (S === 'creator') { if (cDrag == null) cRot += dt * 0.25; if (cChar) cChar.rotation.y = cRot; renderer.render(cScene, cCam); }
     else if (S === 'lobby') { updateMenu(dt); renderer.render(world, cam); }
     else if (S === 'drive') { updateDrive(dt); renderer.render(world, cam); }
-    else if (S === 'play') { updatePlay(dt); renderer.render(world, cam); }
+    else if (S === 'play') { if (!(uiOpen === 'pause' && Net.mode === 'solo')) updatePlay(dt); renderer.render(world, cam); }
   } catch (e) { console.error(e); }
   requestAnimationFrame(loop);
 }
@@ -1037,11 +1264,17 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyF' && !uiOpen) { flashOn = !flashOn; sfx.tick(); }
   else if (e.code === 'KeyC' && !uiOpen) { crouch = !crouch; }
   else if (e.code === 'KeyV') { const m = voiceToggleMute(); if (m !== null) toast(m ? 'Микрофон выключен' : 'Микрофон включён', 1.5); }
-  else if (e.code === 'Escape') { if (uiOpen === 'note') closeNote(); else if (uiOpen === 'checkin') closeCheckin(false); }
+  else if (e.code === 'Escape') {
+    if (uiOpen === 'note') closeNote();
+    else if (uiOpen === 'checkin') closeCheckin(false);
+    else if (uiOpen === 'pause') closePause();
+    else if (!uiOpen) openPause();
+  }
   if (e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'ControlLeft') e.preventDefault();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+addEventListener('beforeunload', () => { saveCheckpoint(true); writeClientSession(); });
 canvas.addEventListener('click', () => {
   if (S === 'drive') { skipDrive(); return; }
   if (S === 'play' && !isTouch && !locked && !uiOpen && canvas.requestPointerLock) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
@@ -1068,7 +1301,7 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, fal
 
 /* ================= BOOT ================= */
 setupWorld(1);
-show('#loading', false); show('#menu', true); S = 'menu';
+refreshMenuSave(); show('#loading', false); show('#menu', true); S = 'menu';
 requestAnimationFrame(loop);
 window.__br = { spawnMon: () => spawnMonster(), sim(sec) { const n = Math.round(sec / 0.05); for (let i = 0; i < n; i++) { if (S === "play") updatePlay(0.05); else if (S === "drive") updateDrive(0.05); } }, get S() { return S; }, info: () => renderer.info.render, scene: () => world, G: () => G, P, rooms, act, Net, players: () => players, get uiOpen() { return uiOpen; }, set yaw(v) { yaw = v; }, set pitch(v) { pitch = v; }, keys, teleport(x, y, z) { P.x = x; P.feet = y; P.z = z; }, hs: Hs, guests: () => G.guests };
 })();
