@@ -16,11 +16,13 @@ function srgbOut(m) { const prev = m.onBeforeCompile; m.onBeforeCompile = sh => 
 function prep(root) {
   const dialC = document.createElement('canvas'); dialC.width = 128; dialC.height = 64; const dialT = new T.CanvasTexture(dialC); dialT.flipY = false;
   LOBBY3D.dial = { c: dialC, t: dialT };
+  const aonC = document.createElement('canvas'); aonC.width = 192; aonC.height = 56; const aonT = new T.CanvasTexture(aonC); aonT.flipY = false; LOBBY3D.aon = { c: aonC, t: aonT };
   root.traverse(o => {
     if (!o.isMesh) return;
     const base = o.name.replace(/\.?00\d$/, ''), m = o.material, mn = m.name || '';
     o.frustumCulled = false;
     if (mn === 'mirror') { m.color.setHex(0x232b2d); m.roughness = 0.15; m.metalness = 0; }
+    if (mn === 'aondisp') { o.material = srgbOut(new T.MeshBasicMaterial({ map: aonT })); drawAon(''); return; }
     if (mn === 'elevdial') { const bm = srgbOut(new T.MeshBasicMaterial({ map: dialT })); o.material = bm; return; }
     if (mn.indexOf('night') === 0) { m.transparent = true; m.opacity = 0.0; m.depthWrite = false; o.visible = false; return; } // game draws its own street
     if (['elevDoorA', 'elevDoorB', 'elevSign'].includes(base)) { if (!m.userData.bas) { const bm = srgbOut(new T.MeshBasicMaterial({ map: m.map || null, color: m.color.clone().multiplyScalar(base === 'elevSign' ? 0.5 : 0.62) })); m.userData.bas = bm; LOBBY3D.basics.push({ m: bm, c: bm.color.clone() }); } o.material = m.userData.bas; return; }
@@ -41,6 +43,11 @@ function finish(o, m, mn) {
     if (em) { m.emissiveIntensity = mn === 'bulb' ? 3.5 : mn === 'shade' ? 1.3 : mn === 'exit' ? 0.12 : mn === 'screen' ? 1.5 : mn === 'clock' ? 2 : mn === 'neon' ? 4 : 1; m.userData.e = m.emissiveIntensity; LOBBY3D.emis.push({ m, e: null, base: m.emissiveIntensity, keep: mn === 'exit' || mn === 'neon' }); }
     srgbOut(m); LOBBY3D.mats.push(m);
   }
+}
+function drawAon(txt) {
+  const d = LOBBY3D.aon; if (!d) return; const g = d.c.getContext('2d'); g.fillStyle = '#1c0605'; g.fillRect(0, 0, 192, 56);
+  if (txt) { g.font = 'bold 40px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = '#ff2a1a'; g.shadowBlur = 12; g.fillStyle = '#ff5a44'; g.fillText(String(txt), 96, 30); g.shadowBlur = 0; } else { g.fillStyle = '#3a0e0b'; g.fillRect(40, 26, 112, 4); }
+  d.t.needsUpdate = true;
 }
 function drawDial(txt, glitch) {
   const d = LOBBY3D.dial; if (!d) return; const g = d.c.getContext('2d'); g.fillStyle = '#0a0606'; g.fillRect(0, 0, 128, 64);
@@ -80,13 +87,8 @@ function applyLobby3D(n0) {
   const ph = node.phoneHandset ? ctr(node.phoneHandset) : P3(0.55, 1.28, -1.95);
   const pg = W.handset && W.handset.parent; if (pg) pg.position.set(ph.x, ph.y - 0.17, ph.z);
   W.phonePos = ph.clone();
-  // caller-ID box (red digits) next to the phone; the game calls W.aonShow('312') while it rings
-  { const ac = document.createElement('canvas'); ac.width = 192; ac.height = 56; const at = new T.CanvasTexture(ac); at.anisotropy = 4;
-    const draw = txt => { const g = ac.getContext('2d'); g.fillStyle = '#1c0605'; g.fillRect(0, 0, 192, 56); if (txt) { g.font = 'bold 40px "PT Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = '#ff2a1a'; g.shadowBlur = 12; g.fillStyle = '#ff5a44'; g.fillText(String(txt), 96, 30); } else { g.fillStyle = '#3a0e0b'; g.fillRect(40, 26, 112, 4); } at.needsUpdate = true; };
-    draw('');
-    const grp = new T.Group(); const body = new T.Mesh(new T.BoxGeometry(0.24, 0.06, 0.13), new T.MeshLambertMaterial({ color: 0x302e2a })); grp.add(body);
-    const face = new T.Mesh(new T.PlaneGeometry(0.2, 0.058), new T.MeshBasicMaterial({ map: at })); face.rotation.x = -1.15; face.position.set(0, 0.037, 0.0); grp.add(face);
-    grp.position.set(ph.x - 0.34, ph.y - 0.1, ph.z + 0.27); world.add(grp); W.aonGrp = grp; W.aonShow = draw; }
+  // caller-ID is a screen built into the phone model (material 'aondisp'); the game draws the digits into its canvas
+  W.aonShow = txt => drawAon(txt);
   const nc = node.papers ? ctr(node.papers) : P3(-0.5, 0.83, -2.2); moveTo(W.px.note, nc.x, nc.y + 0.05, nc.z); W.px.note.rotation.set(-Math.PI / 2, 0, 0, 'YXZ'); W.px.note.scale.set(1.3, 1.3, 1.3);
   const lc = node.ledger ? ctr(node.ledger) : P3(0.1, 1.17, -2.07); moveTo(W.px.book, lc.x, lc.y, lc.z);
   moveTo(W.px.mon, 1.3, 1.31, -2.0); W.px.mon.scale.set(1.1, 1, 1);
@@ -125,41 +127,18 @@ function applyLobby3D(n0) {
   for (const sx of [-6.4, -5.6, -4.8]) seat(sx, 0.55, 1.3, 0.76, 0.9, 1.1, 'Сесть на диван', sx, 1.4, Math.PI);
   seat(-3.5, 0.5, 2.5, 0.95, 0.95, 1.0, 'Сесть в кресло', -3.5, 2.5, Math.PI);
 
-  // 7b) front door: the two baked leaves are cut out of the lobby meshes and hung on hinges, so the drawn door itself opens
+  // 7b) front door: the two leaves (own materials in the bake) hang on hinges, so the drawn door itself opens
   try {
     const fd = doors && doors.front;
     if (fd) {
-      const src = []; inst.traverse(o => { if (o.isMesh && o.material && ['wood_dark', 'brass'].includes(o.material.name)) src.push(o); });
-      const LD = LOBBY3D.leafData = LOBBY3D.leafData || new Map();
-      const PZ = 5.85, HX = [-1.0, 1.0], leaves = [new T.Group(), new T.Group()];
-      src.forEach(o => {
-        const geo = o.geometry; let ent = LD.get(geo.uuid);
-        if (!ent) {
-          const idx = geo.index ? geo.index.array : null, pos = geo.attributes.position, nT = idx ? idx.length : pos.count, keep = [], tris = [[], []];
-          for (let t = 0; t < nT; t += 3) {
-            const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, c = idx ? idx[t + 2] : t + 2;
-            const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3, cy = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3, cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
-            if (Math.abs(cx) <= 1.0 && cy < 2.55 && ((o.material.name === 'wood_dark' && cz > 5.75 && cz < 5.97) || (o.material.name === 'brass' && cz > 5.4 && cz < 6.3 && cy > 0.7 && cy < 1.5))) tris[cx < 0 ? 0 : 1].push(a, b, c); else keep.push(a, b, c);
-          }
-          ent = { geos: [null, null] };
-          [0, 1].forEach(li => {
-            const ids = tris[li]; if (!ids.length) return;
-            const map = new Map(), vs = []; ids.forEach(v => { if (!map.has(v)) { map.set(v, vs.length); vs.push(v); } });
-            const ng = new T.BufferGeometry();
-            for (const name of ['position', 'normal', 'uv', 'uv2']) { const at = geo.attributes[name]; if (!at) continue; const arr = new Float32Array(vs.length * at.itemSize); vs.forEach((v, n) => { for (let k = 0; k < at.itemSize; k++) { let val = at.array[v * at.itemSize + k]; if (name === 'position') { if (k === 0) val -= HX[li]; if (k === 2) val -= PZ; } arr[n * at.itemSize + k] = val; } }); ng.setAttribute(name, new T.BufferAttribute(arr, at.itemSize)); }
-            ng.setIndex(ids.map(v => map.get(v))); ent.geos[li] = ng;
-          });
-          if (ids0(keep)) geo.setIndex(keep);
-          LD.set(geo.uuid, ent);
-        }
-        [0, 1].forEach(li => { if (!ent.geos[li]) return; const m = new T.Mesh(ent.geos[li], o.material); m.frustumCulled = false; leaves[li].add(m); });
-      });
-      function ids0(a) { return a.length > 0; }
-      leaves.forEach((g, li) => { g.position.set(HX[li], 0, PZ); src[0].parent.add(g); });
-      const oldP = doors.front.pivot; if (oldP) oldP.visible = false;
-      const lm = []; leaves.forEach(g => g.traverse(o => { if (o.isMesh) lm.push(o); })); inter(lm, () => doorLabel(fd), () => doorInteract(fd), 2.8);
-      const sgn = [1, -1];
-      doors.front.pivot = { position: oldP.position, rotation: { set y(v) { leaves[0].rotation.y = sgn[0] * v; leaves[1].rotation.y = sgn[1] * v; }, get y() { return leaves[0].rotation.y; } }, visible: false };
+      const HX = { L: -1.0, R: 1.0 }, HZ = 5.88, piv = { L: new T.Group(), R: new T.Group() }, lm = [];
+      inst.traverse(o => { if (o.isMesh && o.material && /^door(wood|brass)[LR]$/.test(o.material.name)) lm.push(o); });
+      lm.forEach(o => { const side = o.material.name.slice(-1), pv = piv[side]; if (!pv.parent) { pv.position.set(HX[side], 0, HZ); o.parent.add(pv); } o.parent.remove(o); pv.add(o); o.position.set(-HX[side], 0, -HZ); });
+      if (lm.length) {
+        const oldP = fd.pivot; if (oldP) oldP.visible = false;
+        inter(lm, () => doorLabel(fd), () => doorInteract(fd), 2.8);
+        fd.pivot = { position: oldP.position, rotation: { set y(v) { piv.L.rotation.y = v; piv.R.rotation.y = -v; }, get y() { return piv.L.rotation.y; } }, visible: false };
+      }
     }
   } catch (e) { console.warn('front door leaves', e); }
   // 8) curtains: the four baked panels (one mesh with the 'curtain' material) are re-cut into movable pieces that stretch to the window centre
@@ -167,7 +146,7 @@ function applyLobby3D(n0) {
     let cur = null; inst.traverse(o => { if (o.isMesh && o.material && o.material.name === 'curtain') cur = o; });
     if (cur) {
       const geo = cur.geometry, idx = geo.index ? geo.index.array : null, pos = geo.attributes.position;
-      const cl = [{ a: -6.8, b: -6.2, piv: -6.72, k: 'lobby0' }, { a: -4.4, b: -3.8, piv: -3.88, k: 'lobby0' }, { a: 3.0, b: 3.6, piv: 3.08, k: 'lobby1' }, { a: 5.4, b: 6.0, piv: 5.92, k: 'lobby1' }];
+      const cl = [{ a: -6.8, b: -6.2, piv: -6.75, k: 'lobby0' }, { a: -4.4, b: -3.8, piv: -3.85, k: 'lobby0' }, { a: 3.0, b: 3.6, piv: 3.05, k: 'lobby1' }, { a: 5.4, b: 6.0, piv: 5.95, k: 'lobby1' }];
       const tris = cl.map(() => []), nT = idx ? idx.length : pos.count;
       for (let t = 0; t < nT; t += 3) { const i0 = idx ? idx[t] : t, i1 = idx ? idx[t + 1] : t + 1, i2 = idx ? idx[t + 2] : t + 2; const x = (pos.getX(i0) + pos.getX(i1) + pos.getX(i2)) / 3; const c = cl.findIndex(c => x >= c.a && x <= c.b); if (c >= 0) tris[c].push(i0, i1, i2); }
       const parts = {};

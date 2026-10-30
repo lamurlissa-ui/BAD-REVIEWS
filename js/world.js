@@ -288,7 +288,6 @@ function buildServiceWing() {
   makeDoor('service', { x: 4.9, y: 0, z: -4.1, w: 1.2, kind: 'service', col: [4.9, -4.16, 6.1, -4.04], dir: 1, color: 0x4b4f4a });
   makeDoor('st0', { x: -5.5, y: 0, z: -4.1, w: 1.2, rot: 0, kind: 'stair', col: [-5.5, -4.16, -4.3, -4.04], dir: 1, color: 0x4b4f4a });
   lobbyBackSkin();
-  { const cr = M(0xc2b48f); for (const [a, b] of [[4.9, 6.1], [-5.5, -4.3]]) box(b - a, 0.14, 0.09, cr, (a + b) / 2, 3.14, -3.955); }   // cornice over the door gaps (baked trim is missing there)
   const cw = M(0x5a5d55);
   wallBox(4.2, -11.2, 4.4, -4.2, 0, 2.8, cw); wallBox(6.6, -11.2, 6.8, -4.2, 0, 2.8, cw); wallBox(4.4, -11.2, 6.6, -11, 0, 2.8, cw);
   plane(2.2, 7, M(0x2a2b28), 5.5, 2.8, -7.6, 0, Math.PI / 2); plane(2.2, 7, M(0x2e2f2b), 5.5, 0.025, -7.6, 0, -Math.PI / 2);
