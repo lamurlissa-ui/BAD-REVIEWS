@@ -10,6 +10,7 @@ try {
 /* ---------- renderer ---------- */
 const canvas = $('#gl');
 const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); const d = document.createElement('div'); d.id = 'ctxLost'; d.style.cssText = 'position:fixed;inset:0;z-index:999;background:#000d;color:#fff;display:flex;align-items:center;justify-content:center;font:16px sans-serif;text-align:center;padding:24px'; d.innerHTML = 'Видеокарта зависла (потерян WebGL-контекст).<br>Нажми, чтобы перезагрузить страницу.'; d.onclick = () => location.reload(); document.body.appendChild(d); });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
 maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -390,7 +391,7 @@ function startTour() {
   window.TOUR = true; aInit(); Net.mode = 'solo'; Net.id = 'solo'; campaign = null;
   const cfg = { seed: 7, players: { solo: { id: 'solo', name: C.name, char: C, idx: 0 } }, night: 1 };
   SEED = cfg.seed; NIGHT_LEN = 840; players = cfg.players; CURRENT_NIGHT = 1; currentRating = 1.2; currentReviews = 318; myIdx = 0;
-  G = freshG(); G.started = true; G.power = true; G.slammed = true; G.phase = 'tour'; Hs.poses = {}; gameTime = 0; timers = []; anims = [];
+  G = freshG(); G.started = true; G.power = true; G.slammed = false; G.phase = 'tour'; Hs.poses = {}; gameTime = 0; timers = []; anims = [];
   setupWorld(SEED); seedRng(SEED + 7); Hs.sched = []; Hs.calls = []; Hs.complaints = []; Hs.npcs = {}; Hs.mon = null;
   show('#lobby', false); show('#menu', false); show('#morning', false); show('#pause', false);
   W.lever.rotation.z = -0.6; doors.front.open = true; setDoorOpen(doors.front, true);
@@ -621,9 +622,10 @@ function hostAct(pid, a) {
     case 'door': {
       const d = doors[a.id]; if (!d) return;
       if (d.kind === 'front') {
-        if (pose[2] < 5.9 && !d.open) { dispatch({ e: 'toast', to: pid, text: 'Заперто изнутри. Эту дверь открывают только снаружи.' }); dispatch({ e: 'locked', id: d.id }); return; }
+        if (pose[2] < 5.9 && !d.open && !window.TOUR) { dispatch({ e: 'toast', to: pid, text: 'Заперто изнутри. Эту дверь открывают только снаружи.' }); dispatch({ e: 'locked', id: d.id }); return; }
         const opening = !d.open; dispatch({ e: 'door', id: d.id, open: opening }); if (opening) Hs.frontCloseAt = gameTime + 6; return;
       }
+      if (d.kind === 'basement' && window.TOUR) { dispatch({ e: 'door', id: d.id, open: !d.open }); return; }
       if (d.kind === 'basement') { dispatch({ e: 'toast', to: pid, text: 'Подвал заперт. Снизу что-то сопит.' }); dispatch({ e: 'sniff', pos: [BLD.bdoor.x, 1, BLD.bdoor.z - 0.5] }); return; }
       if (d.kind === 'room' && !d.open) {
         const r = d.room, inside = roomAt(pose[0], pose[1], pose[2]) === r;
