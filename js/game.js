@@ -469,7 +469,7 @@ function restoreCheckpoint(cp) {
     for (const id in h.npcs || {}) { const x = h.npcs[id]; const n = Object.assign({}, x, { path: (x.path || []).map(fromVec), done: null }); n.done = restoreNpcDone(id, n); Hs.npcs[id] = n; const o = npcs[id]; if (o) { o.g.position.set(n.x, n.y, n.z); o.g.rotation.y = n.yaw; o.tx = n.x; o.ty = n.y; o.tz = n.z; o.tyaw = n.yaw; } }
     Hs.mon = h.mon ? Object.assign({}, h.mon, { goal: fromVec(h.mon.goal), path: (h.mon.path || []).map(fromVec) }) : null;
   }
-  if (G.monster) { monObj = makeMonster(); const m = cp.host && cp.host.mon; monObj.position.set(m ? m.x : -11.1, m ? m.y : 0, m ? m.z : 2.2); world.add(monObj); monSound = loopSound('breath', monObj.position); }
+  if (G.monster) { monObj = makeMonster(); const m = cp.host && cp.host.mon; monObj.position.set(m ? m.x : BLD.spawn.x, m ? m.y : BLD.spawn.y, m ? m.z : BLD.spawn.z); world.add(monObj); monSound = loopSound('breath', monObj.position); }
   setMK(G.mkey == null); if (G.power) W.lever.rotation.z = -0.6;
   const pos = cp.playerByIndex && cp.playerByIndex[myIdx];
   W.car.position.copy(drivePath.getPointAt(1)); W.car.lookAt(drivePath.getPointAt(0.99)); startPlay();
@@ -535,10 +535,10 @@ function setOutsideLights(on) {
   W.porchL.intensity = on ? 0.9 : 0; W.signL.intensity = on ? 1.4 : 0;
   W.headlights.forEach(h => h.intensity = on ? 2.2 : 0);
 }
-const inLobbyArea = (x, z, y) => y < 1.5 && x > -8.5 && x < 7.2 && z > -11.2 && z < 5.8;
+const inLobbyArea = (x, z, y) => y > -0.5 && y < 1.5 && x > -8.5 && x < 7.2 && z > -11.2 && z < 5.8 && !inStairwell(x, z);
 const insideBuilding = (x, z) => x > -11.9 && x < 11.9 && z > -11.9 && z < 5.9;
-function roomAt(x, y, z) { for (const r of rooms) { if (Math.abs(y - r.level * H) > 1.2) continue; const x0 = r.cx - 2.5, x1 = r.cx + 2.5; const z0 = r.side > 0 ? 1.2 : -5.85, z1 = r.side > 0 ? 5.85 : -1.2; if (x > x0 && x < x1 && z > z0 && z < z1) return r; } return null; }
-const inStairwell = (x, z) => x < -8.5 && x > -11.9 && z > -1.0 && z < 5.9;
+function roomAt(x, y, z) { for (const r of rooms) { if (Math.abs(y - r.level * H) > 1.2) continue; const x0 = r.cx - 2.5, x1 = r.cx + 2.5; const z0 = r.side > 0 ? 0.2 : -6.85, z1 = r.side > 0 ? 4.85 : -2.2; if (x > x0 && x < x1 && z > z0 && z < z1) return r; } return null; }
+const inStairwell = (x, z) => x > BLD.core.x0 - 0.05 && x < BLD.core.x1 && z > BLD.core.z0 && z < BLD.core.z1;
 
 /* ---------- player update ---------- */
 const keys = {}; const stick = { x: 0, y: 0, id: null, ox: 0, oy: 0 };
@@ -604,7 +604,7 @@ function hostAct(pid, a) {
         if (pose[2] < 5.9 && !d.open) { dispatch({ e: 'toast', to: pid, text: 'Заперто изнутри. Эту дверь открывают только снаружи.' }); dispatch({ e: 'locked', id: d.id }); return; }
         const opening = !d.open; dispatch({ e: 'door', id: d.id, open: opening }); if (opening) Hs.frontCloseAt = gameTime + 6; return;
       }
-      if (d.kind === 'basement') { dispatch({ e: 'toast', to: pid, text: 'Подвал заперт. Снизу что-то сопит.' }); dispatch({ e: 'sniff', pos: [-11.1, 1, 2.2] }); return; }
+      if (d.kind === 'basement') { dispatch({ e: 'toast', to: pid, text: 'Подвал заперт. Снизу что-то сопит.' }); dispatch({ e: 'sniff', pos: [BLD.bdoor.x, 1, BLD.bdoor.z - 0.5] }); return; }
       if (d.kind === 'room' && !d.open) {
         const r = d.room, inside = roomAt(pose[0], pose[1], pose[2]) === r;
         if (!r.unlocked && G.mkey !== pid && !inside) { dispatch({ e: 'locked', id: d.id, by: pid }); return; }
@@ -711,7 +711,7 @@ function applyEv(ev) {
     case 'corrDark': { G.corrDark[ev.level] = ev.dark; if (ev.dark) { sfx.zap(V3(0, ev.level * H + 2.8, 0)); sfx.zap(V3(6, ev.level * H + 2.8, 0)); } return; }
     case 'monster': {
       G.monster = ev.on;
-      if (ev.on && !monObj) { monObj = makeMonster(); monObj.position.set(-11.1, 0, 2.2); world.add(monObj); monSound = loopSound('breath', monObj.position); sfx.roar(V3(-11.1, 1, 2.2)); toast('Снизу, из подвала, что-то вылезло. Не шумите.', 5); pulseVig(); }
+      if (ev.on && !monObj) { monObj = makeMonster(); monObj.position.set(BLD.spawn.x, BLD.spawn.y, BLD.spawn.z); world.add(monObj); monSound = loopSound('breath', monObj.position); sfx.roar(V3(BLD.bdoor.x, 1, BLD.bdoor.z - 0.5)); toast('Снизу, из подвала, что-то вылезло. Не шумите.', 5); pulseVig(); }
       return;
     }
     case 'monMode': G.monMode = ev.mode; if (ev.mode === 'chase' && monObj) { sfx.roar(monObj.position.clone().add(V3(0, 2, 0))); if (monObj.position.distanceTo(cam.position) < 16) pulseVig(); } return;
@@ -797,7 +797,7 @@ function npcGo(id, pts, done) { const n = Hs.npcs[id]; if (!n) return; n.path = 
 function npcGoRoom(g, r) {
   const n = Hs.npcs[g.id]; const y = r.level * H, s = r.side; n.roomDoor = r.door.id;
   const doorX = r.cx + s * -1.4, corZ = r.zc - s * 0.6;
-  const start = nearestNode(V3(n.x, n.y, n.z)), goalNode = nearestNode(V3(doorX, y, 0));
+  const start = nearestNode(V3(n.x, n.y, n.z)), goalNode = nearestNode(V3(doorX, y, BLD.corrZ));
   const pts = pathTo(start, goalNode).map(id => WPN[id].p.clone());
   pts.push(V3(doorX, y, corZ), V3(doorX, y, r.zc + s * 0.9), r.seatWorld.clone());
   npcGo(g.id, pts, () => { const d = r.door; if (d.open) dispatch({ e: 'door', id: d.id, open: false }); dispatch({ e: 'guestState', id: g.id, state: 'inRoom' }); });
@@ -830,7 +830,7 @@ function complaint(gid) {
 }
 function spawnMonster() {
   if (Hs.mon) return;
-  Hs.mon = { x: -11.1, y: 0, z: 2.2, yaw: 0, mode: 'roam', path: [], goal: null, lastHeard: -99, cool: 4, catchCool: 0 };
+  Hs.mon = { x: BLD.spawn.x, y: BLD.spawn.y, z: BLD.spawn.z, yaw: 0, mode: 'roam', path: [], goal: null, lastHeard: -99, cool: 4, catchCool: 0 };
   dispatch({ e: 'door', id: 'basement', open: true }); dispatch({ e: 'monster', on: true });
 }
 function hostUpdate(dt) {
@@ -1027,7 +1027,7 @@ function updateLights() {
   if (G.power && G.powerFlicker != null) { const t = gameTime - G.powerFlicker; const seq = [[0.3, 0], [0.42, 1], [0.6, 0], [0.66, 1], [1.05, 0]]; const st = seq.find(x => t < x[0]); pw = st ? st[1] : 1; }
   W.lobbyLights.forEach(L => L.intensity = (W.lm3d ? 0.2 : 0.95) * pw); if (W.lm3d) LOBBY3D.update(pw, 0.016); W.bulbs.forEach(b => b.material.color.setHex(pw ? 0xffe3a6 : 0x221d18));
   W.corL.intensity = 0.55 * pw; if (W.connLights) { W.connLights.forEach(l => l.intensity = 0.55 * pw); W.connBulbs.forEach(b => b.material.color.setHex(pw ? 0xffe3a6 : 0x221d18)); } W.corBulb.material.color.setHex(pw ? 0xd8ffe0 : 0x221d18);
-  W.stairLights.forEach((l, i) => l.intensity = 0.6 * pw * localMul.stair[i]);
+  W.stairLights.forEach((l, i) => l.intensity = 0.6 * pw * localMul.stair[i]); if (W.basLight) W.basLight.intensity = 0.35 * pw;
   W.stairBulbs.forEach((b, i) => b.material.color.setHex(pw && i <= 2 && localMul.stair[i] > 0.5 ? 0xe8f0e0 : 0x221d18));
   for (const L of [1, 2]) { const on = pw && !G.corrDark[L] ? localMul.corr[L] : 0; W.corridorLights[L].forEach(l => l.intensity = 0.85 * on); W.corridorBulbs[L].forEach(b => b.material.color.setHex(on > 0.5 ? 0xffe9c0 : 0x221d18)); }
   hemi.intensity = !insideBuilding(cam.position.x, cam.position.z) ? 0.55 : pw ? 0.13 : 0.035;
@@ -1079,29 +1079,29 @@ function shadowFigure(sit) {
 const SCARES = {
   fall(lvl) {
     const kinds = [() => box(0.5, 0.5, 0.5, M(0x6a4a2a), 0, 0, 0), () => { const c = new T.Group(); box(0.45, 0.05, 0.45, M(0x3a2519), 0, 0.45, 0, c); box(0.05, 0.5, 0.45, M(0x3a2519), -0.2, 0.7, 0, c); world.add(c); return c; }, () => box(0.25, 0.12, 0.1, M(0x2a1a1a), 0, 0, 0)];
-    const o = pick(kinds)(); const y0 = Math.min(42, P.feet + rand(6, 10)); o.position.set(-10.22, y0, rand(2, 4)); let vy = 0, hit = false, t = 0;
-    sfx.whoosh(V3(-10.22, P.feet + 3, 3));
-    D.fx.push({ update(dt) { t += dt; if (!hit) { vy -= 14 * dt; o.position.y += vy * dt; o.rotation.x += dt * 3; o.rotation.z += dt * 2; if (o.position.y <= 0.25) { o.position.y = 0.25; hit = true; sfx.thud(V3(-10.22, 0.5, 3)); if (P.feet < 4) shake = 0.6; } } if (t > 9) { world.remove(o); return false; } } });
+    const o = pick(kinds)(); const y0 = Math.min(42, P.feet + rand(6, 10)); o.position.set(-5.2, y0, rand(-6.0, -4.8)); let vy = 0, hit = false, t = 0;
+    sfx.whoosh(V3(-5.2, P.feet + 3, -5.3));
+    D.fx.push({ update(dt) { t += dt; if (!hit) { vy -= 14 * dt; o.position.y += vy * dt; o.rotation.x += dt * 3; o.rotation.z += dt * 2; if (o.position.y <= 0.25) { o.position.y = 0.25; hit = true; sfx.thud(V3(-5.2, 0.5, -5.3)); if (P.feet < 4) shake = 0.6; } } if (t > 9) { world.remove(o); return false; } } });
   },
   runner(lvl) {
-    const y = (lvl + 1) * H; const f = shadowFigure(false); let t = 0; const a = V3(-11.4, y, -0.6), b = V3(-8.9, y, 1.5); f.position.copy(a); f.lookAt(b.x, y, b.z);
-    sfx.run(V3(-10, y + 1, 0.5));
+    const y = (lvl + 1) * H; const f = shadowFigure(false); let t = 0; const a = V3(-10.8, y, -5.0), b = V3(-5.6, y, -5.4); f.position.copy(a); f.lookAt(b.x, y, b.z);
+    sfx.run(V3(-8, y + 1, -5.2));
     D.fx.push({ update(dt) { t += dt / 0.8; f.position.lerpVectors(a, b, Math.min(1, t)); if (t >= 1) { world.remove(f); return false; } } });
   },
   sitter(lvl) {
-    const onUp = P.z < 2.2; const f = shadowFigure(true); const y = lvl * H;
-    if (onUp && lvl <= 1) { f.position.set(-9.25, y + 1.2, 3.6); f.rotation.y = Math.PI; } else { f.position.set(-11.15, y - 0.5, 3.2); f.rotation.y = 0; }
+    const onUp = P.z > -8.6; const f = shadowFigure(true); const y = lvl * H;
+    if (onUp && lvl <= 1) { f.position.set(-6.9, y + 1.7, -11.3); f.rotation.y = 0; } else { f.position.set(-5.5, y + 0.35, -7.3); f.rotation.y = 0; }
     let t = 0, seen = 0;
     D.fx.push({ update(dt) { t += dt; const d = f.position.distanceTo(cam.position); tmpV.copy(f.position).add(V3(0, 1, 0)).sub(cam.position).normalize(); const look = tmpV.dot(cam.getWorldDirection(new T.Vector3())); if (look > 0.92) seen += dt; if (d < 4 || seen > 1.0 || t > 14) { G.flickUntil = gameTime + 0.45; later(0.2, () => world.remove(f)); if (d < 6) sfx.whoosh(f.position); return false; } } });
   },
   ball(lvl) {
     const y = lvl * H; const ball = new T.Mesh(sph(0.12, 10, 8), M(0xb8202a, { shininess: 40 })); world.add(ball);
-    const pts = [V3(-9.3, y + 1.82, 5.0), V3(-9.3, y + 1.82, 4.4), V3(-9.3, y + 0.12, 1.6), V3(-9.0, y + 0.12, -0.3), V3(-8.0, y + 0.12, 0)];
+    const pts = [V3(-5.5, y + 1.82, -11.2), V3(-5.5, y + 1.82, -10.8), V3(-5.5, y + 0.12, -6.4), V3(-5.2, y + 0.12, -5.0), V3(-5.0, y + 0.12, -3.0)];
     let i = 0, u = 0, acc = 0;
     D.fx.push({ update(dt) { if (i >= pts.length - 1) { if ((u += dt) > 6) { world.remove(ball); return false; } return; } const a = pts[i], b = pts[i + 1]; const len = a.distanceTo(b); u += dt * 2.2 / len; const bounce = i === 1 ? Math.abs(Math.sin(u * len / 0.28 * Math.PI)) * 0.12 : 0; ball.position.lerpVectors(a, b, Math.min(1, u)); ball.position.y += bounce; acc += dt * 2.2; if (i === 1 && acc > 0.28) { acc = 0; sfx.bounce(ball.position); } if (u >= 1) { u = 0; i++; } } });
   },
-  stairsOff(lvl) { const i = clamp(lvl, 0, 2); localMul.stair[i] = 0; sfx.zap(V3(-10.2, lvl * H + 2.8, 0.3)); later(3.5, () => { localMul.stair[i] = 1; sfx.zap(V3(-10.2, lvl * H + 2.8, 0.3)); }); },
-  stepsAbove(lvl) { const y = (lvl + 1) * H + 0.3; for (let i = 0; i < 7; i++) setTimeout(() => sfx.step('hard', V3(-9.5, y, 0.6)), i * 520); setTimeout(() => sfx.sniff(V3(-9.5, y + 1, 0.6)), 7 * 520 + 900); },
+  stairsOff(lvl) { const i = clamp(lvl, 0, 2); localMul.stair[i] = 0; sfx.zap(V3(-6.5, lvl * H + 2.8, -6.8)); later(3.5, () => { localMul.stair[i] = 1; sfx.zap(V3(-6.5, lvl * H + 2.8, -6.8)); }); },
+  stepsAbove(lvl) { const y = (lvl + 1) * H + 0.3; for (let i = 0; i < 7; i++) setTimeout(() => sfx.step('hard', V3(-5.5, y, -6.0)), i * 520); setTimeout(() => sfx.sniff(V3(-5.5, y + 1, -6.0)), 7 * 520 + 900); },
   stepsCorr(lvl) { for (let i = 0; i < 5; i++) setTimeout(() => sfx.step('soft', V3(P.x + 1, lvl * H + 0.3, 0)), i * 600); },
   peek(lvl) {
     const cands = rooms.filter(r => r.level === lvl).map(r => ({ r, x: r.cx + r.side * -1.4 })).filter(c => { const dx = c.x - P.x; const fwd = -Math.sin(yaw) * dx; return Math.abs(dx) > 4 && Math.abs(dx) < 11 && fwd > 0; });

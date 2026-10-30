@@ -14,6 +14,7 @@ function groundAt(x, z, feet) {
   let best = -1e9;
   for (const s of surfaces) {
     if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) continue;
+    if (s.hole && x > s.hole[0] && x < s.hole[2] && z > s.hole[1] && z < s.hole[3]) continue;
     const y = s.ramp ? s.ya + (z - s.za) / (s.zb - s.za) * (s.yb - s.ya) : s.y;
     if (y <= feet + 0.55 && y > best) best = y;
   }
@@ -68,6 +69,23 @@ function makeContainer(id, meshes, kind, room, label, animFn) {
 }
 
 /* ================= BUILD ================= */
+/* ================= BUILDING LAYOUT: one place for the numbers (north is -z) =================
+   lobby (baked, never changes): x -8.5..7.0, z -4..5.85.  Stair core sits right behind the lobby «Выход» door. */
+const BLD = {
+  core: { x0: -11.85, x1: -4.1, z0: -12, z1: -4.2 },
+  landZ: -6.4,                                  // entry landing: z landZ .. core.z1
+  fA: { x0: -6.8, x1: -4.3 },                   // east flight, goes north (z -6.4 -> -10.8)
+  fB: { x0: -9.2, x1: -7.0 },                   // west flight, comes back south (z -10.8 -> -6.4)
+  midZ: -10.8,                                  // mid landing z -12 .. -10.8
+  bas: { y: -3.0, rampX0: -11.5, rampX1: -9.7, rampZ0: -6.3, rampZ1: -11.4 },   // basement stairs go down along the west wall
+  hall: { x0: -9.2, x1: 4.2, z0: -12, z1: -8.2 },                               // basement hall under the core and staff area
+  corrZ: -1.0, corrHalf: 1.2,                   // upper floors: corridor z -2.2..0.2 (elevator doors z -1.8..-0.2 line up with the lobby's)
+  spawn: { x: -3.0, y: -3.0, z: -10.0 },        // where Шумоед lives
+  bdoor: { x: -10.6, z: -6.4 }                  // basement door
+};
+BLD.landPos = L => new T.Vector3(-4.9, L * H, -5.3);
+BLD.midPos = L => new T.Vector3(-6.9, L * H + 1.7, -11.4);
+
 function buildWorld(seed) {
   seedRng(seed);
   world = new T.Scene();
@@ -78,7 +96,7 @@ function buildWorld(seed) {
   moon = new T.DirectionalLight(0x9fb2e0, 0.3); moon.position.set(-30, 60, 20); world.add(moon);
   buildExterior();
   buildLobby();
-  buildStairwell();
+  buildStairCore();
   for (const L of [1, 2]) buildFloor(L);
   buildWaypoints();
 }
@@ -109,7 +127,15 @@ function buildExterior() {
   post(-13, 27, true, false); post(8.5, 14, false, true);
   // hotel shell: 13 floors
   const HT = 13 * H, plaster = M(0x6b5848), trim = M(0x2c211b);
-  wallBox(-12, 5.85, -0.8, 6.15, 0, HT, plaster); wallBox(0.8, 5.85, 12, 6.15, 0, HT, plaster); wallBox(-0.8, 5.85, 0.8, 6.15, 2.4, HT, plaster);
+  const B3 = typeof LOBBY3D !== 'undefined' && LOBBY3D.ready;
+  if (B3) {
+    // the baked lobby owns its south wall (single-sided, at z 5.85): outside skin sits behind it at z 6.10..6.15, with holes for the windows and the door
+    const sk = (x0, x1, y0, y1) => { if (x1 - x0 < 0.01 || y1 - y0 < 0.01) return; box(x1 - x0, y1 - y0, 0.05, plaster, (x0 + x1) / 2, (y0 + y1) / 2, 6.125); solid(x0, 5.85, x1, 6.15, y0, y1); };
+    wallBox(-12, 5.85, -8.5, 6.15, 0, HT, plaster); wallBox(7.0, 5.85, 12, 6.15, 0, HT, plaster); wallBox(-8.5, 5.85, 7.0, 6.15, 3.2, HT, plaster);
+    sk(-8.5, -6.2, 0, 3.2); sk(-6.2, -4.4, 0, 0.95); sk(-6.2, -4.4, 2.55, 3.2); sk(-4.4, -1, 0, 3.2); sk(-1, 1, 2.5, 3.2); sk(1, 3.6, 0, 3.2); sk(3.6, 5.4, 0, 0.95); sk(3.6, 5.4, 2.55, 3.2); sk(5.4, 7.0, 0, 3.2);
+  } else {
+    wallBox(-12, 5.85, -0.8, 6.15, 0, HT, plaster); wallBox(0.8, 5.85, 12, 6.15, 0, HT, plaster); wallBox(-0.8, 5.85, 0.8, 6.15, 2.4, HT, plaster);
+  }
   wallBox(-12.15, -12, -11.85, 6, 0, HT, plaster); wallBox(11.85, -12, 12.15, 6, 0, HT, plaster); wallBox(-12, -12.15, 12, -11.85, 0, HT, plaster);
   box(25.2, 0.6, 19, M(0x2a2420), 0, HT + 0.3, -3);
   W.extG = new T.Group(); world.add(W.extG); curParent = W.extG;
@@ -119,7 +145,7 @@ function buildExterior() {
   const winM = { lit: B(0xffffff, { map: TX.winLit }), sil: B(0xffffff, { map: TX.winSil }), dark: M(0x0d1220, { shininess: 60, specular: 0x445577 }), red: B(0x4a0a0c) };
   W.winM = winM;
   const win = (x, y, st) => { box(1.5, 1.4, 0.1, trim, x, y, 6.12); return plane(1.25, 1.1, winM[st], x, y, 6.19); };
-  { const B3 = typeof LOBBY3D !== 'undefined' && LOBBY3D.ready; for (const x of (B3 ? [-10.2, -5.3, 4.5, 10.2] : [-10.2, -4.6, 4.6, 10.2])) win(x, 1.7, x === 10.2 ? 'lit' : 'dark'); }
+  for (const x of (B3 ? [-10.2, 10.2] : [-10.2, -4.6, 4.6, 10.2])) win(x, 1.7, x === 10.2 ? 'lit' : 'dark');
   const xs = [-10.2, -7.4, -4.6, -1.8, 1.8, 4.6, 7.4, 10.2];
   for (let L = 1; L < 13; L++) for (const x of xs) {
     if (L === 1 && x === 4.6) { W.silWin = win(x, L * H + 1.7, 'sil'); continue; }
@@ -231,7 +257,7 @@ function buildServiceWing() {
   // service door + corridor
   makeDoor('service', { x: 4.9, y: 0, z: -4.1, w: 1.2, kind: 'service', col: [4.9, -4.16, 6.1, -4.04], dir: 1, color: 0x4b4f4a });
   makeDoor('st0', { x: -5.5, y: 0, z: -4.1, w: 1.2, rot: 0, kind: 'stair', col: [-5.5, -4.16, -4.3, -4.04], dir: 1, color: 0x4b4f4a });
-  buildConnectors();
+  lobbyBackSkin();
   const cw = M(0x5a5d55);
   wallBox(4.2, -11.2, 4.4, -4.2, 0, 2.8, cw); wallBox(6.6, -11.2, 6.8, -4.2, 0, 2.8, cw); wallBox(4.4, -11.2, 6.6, -11, 0, 2.8, cw);
   plane(2.2, 7, M(0x2a2b28), 5.5, 2.8, -7.6, 0, Math.PI / 2); plane(2.2, 7, M(0x2e2f2b), 5.5, 0.025, -7.6, 0, -Math.PI / 2);
@@ -252,116 +278,134 @@ function buildServiceWing() {
   surf(-8.5, -11.2, 7.2, 5.85, 0);
 }
 
-/* ---------- connectors: lobby N door → stairwell, lobby E door → service wing ---------- */
-function buildConnectors() {
-  const cw = M(0x5a5d55), fl = M(0x2a2b28), ce = M(0x2e2f2b);
-  const pass = (x0, z0, x1, z1) => { // floor + ceiling of a passage
-    plane(x1 - x0, z1 - z0, fl, (x0 + x1) / 2, 0.025, (z0 + z1) / 2, 0, -Math.PI / 2); plane(x1 - x0, z1 - z0, ce, (x0 + x1) / 2, 2.8, (z0 + z1) / 2, 0, Math.PI / 2); surf(x0, z0, x1, z1, 0);
-  };
-  // north-west: from the lobby door x -5.5..-4.3 west along z -6.2..-4.2, then south into the stair shaft
-  pass(-10.8, -6.2, -4.3, -4.2); pass(-10.8, -4.2, -9.6, -1.2);
-  wallBox(-11.0, -6.4, -4.1, -6.2, 0, 2.8, cw);       // north wall
-  wallBox(-4.3, -6.4, -4.1, -4.2, 0, 2.8, cw);         // east end
-  wallBox(-11.0, -6.4, -10.8, -1.2, 0, 2.8, cw);       // west wall
-  wallBox(-9.6, -4.2, -9.4, -1.2, 0, 2.8, cw);         // east wall of the southern leg
-  wallBox(-9.4, -4.4, -8.5, -4.2, 0, 2.8, cw);         // closes the gap to the lobby corner
-  wallBox(-8.5, -4.4, -5.5, -4.2, 0, 2.8, cw);         // service side of the lobby north wall
-  W.connLights = [];
-  for (const [x, z] of [[-7.5, -5.2], [-10.2, -3.0]]) { const L = VPoint(0xffcf8a, 0, 6, 1.5); L.position.set(x, 2.5, z); W.connLights.push(L); const b = new T.Mesh(sph(0.07), B(0x221d18)); b.position.set(x, 2.7, z); world.add(b); (W.connBulbs = W.connBulbs || []).push(b); }
+/* ---------- the wall behind the lobby's service door (the baked lobby wall is single-sided, so the back needs its own skin) ---------- */
+function lobbyBackSkin() {
+  const m = M(0x5a5d55), s = (x0, x1, y0, y1) => { const b = box(x1 - x0, y1 - y0, 0.19, m, (x0 + x1) / 2, (y0 + y1) / 2, -4.115); rayTargets.push(b); };
+  s(4.4, 4.9, 0, 2.8); s(4.9, 6.1, 2.2, 2.8); s(6.1, 6.6, 0, 2.8);
 }
 
-/* ---------- stairwell: 13 levels shown, 1–3 walkable ---------- */
-const ST = { x0: -11.85, x1: -8.5, laneE: [-10.0, -8.5], laneW: [-11.85, -10.45], gap: [-10.45, -10.0] };
-function buildStairwell() {
-  const paint = M(0xffffff, { map: repTex(TX.wallStair, 2, 1) }), HT = 13 * H;
-  const corrMat = M(0xffffff, { map: repTex(TX.wallCorr, 3, 2) }), lobbyMat = M(0xffffff, { map: repTex(TX.wallLobby, 3, 2) });
-  wallBox(-11.85, -1.2, -10.8, -1.0, 0, HT, paint); wallBox(-9.6, -1.2, -8.5, -1.0, 0, HT, paint); wallBox(-10.8, -1.2, -9.6, -1.0, 2.4, HT, paint);
+/* ---------- stair core: right behind the lobby «Выход» door; 13 levels drawn, levels 1–3 walkable; basement below ---------- */
+function buildStairCore() {
+  const c = BLD.core, HT = 13 * H, bs = BLD.bas, hl = BLD.hall, fA = BLD.fA, fB = BLD.fB;
+  const paint = M(0xffffff, { map: repTex(TX.wallStair, 2, 1) }), conc = M(0x4a4a46), floorM = M(0x2a2b28), ceilM = M(0x2b2620);
+  const dbl = M(0x1f201d, { side: T.DoubleSide });
+  const cx = (a, b) => (a + b) / 2;
+  // outer walls, whole height
+  wallBox(c.x0, c.z0, c.x0 + 0.15, c.z1, 0, HT, paint);
+  wallBox(c.x0 + 0.15, c.z0, c.x1, c.z0 + 0.15, 0, HT, paint);
+  wallBox(-4.3, c.z0 + 0.15, c.x1, c.z1, 0, HT, paint);
+  // south wall, level 0: skin behind the baked lobby wall, door gap x -5.5..-4.3
+  const skin = (x0, x1, y0, y1, col) => { const m = box(x1 - x0, y1 - y0, 0.19, paint, cx(x0, x1), cx(y0, y1), -4.115); rayTargets.push(m); if (col) solid(x0, -4.2, x1, -4.0, y0, y1); };
+  skin(c.x0, -8.6, 0, H, true); skin(-8.6, -5.5, 0, H, false); skin(-5.5, -4.3, 2.2, H, false); skin(-4.3, c.x1, 0, H, false);
+  // "ВЫХОД" lettering on the baked sign (the baked texture shows only a green glow)
+  const exTex = ctex(256, 80, (g, w, h) => { g.fillStyle = '#0a2a14'; g.fillRect(0, 0, w, h); g.fillStyle = '#8dffa8'; g.font = `700 54px ${FD}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('ВЫХОД', w / 2, h / 2 + 2); });
+  plane(0.46, 0.144, B(0xffffff, { map: exTex }), -4.9, 2.5, -3.94, 0);
+  // levels
   W.stairDoors = [];
   for (let L = 0; L < 13; L++) {
-    const y0 = L * H, side = L === 0 ? lobbyMat : (L <= 2 ? corrMat : paint);
-    const mats = faces(side, paint, paint, paint, paint);
-    if (L === 0) { const wm = wallBox(-8.7, -1.0, (typeof LOBBY3D !== 'undefined' && LOBBY3D.ready) ? -8.53 : -8.5, 5.85, y0, y0 + H, mats); wm.position.x = -8.6; if (typeof LOBBY3D !== 'undefined' && LOBBY3D.ready) { wm.scale.x = 0.17 / 0.2; wm.position.x = -8.615; wm.scale.z = 5.95 / 6.85; wm.position.z = 2.875; } }
-    else { wallBox(-8.7, -1.0, -8.5, -0.6, y0, y0 + H, mats); wallBox(-8.7, 0.6, -8.5, 5.85, y0, y0 + H, mats); wallBox(-8.7, -0.6, -8.5, 0.6, y0 + 2.4, y0 + H, mats); }
-    if (L === 0) { /* lobby-level stair door lives in the lobby north wall */ } else if (L <= 2) W.stairDoors.push(makeDoor('st' + L, { x: -8.6, y: y0, z: -0.6, w: 1.2, rot: -Math.PI / 2, dir: 1, kind: 'stair', col: [-8.66, -0.6, -8.54, 0.6], color: 0x4b4f4a }));
-    else { const dm = box(0.07, 2.3, 1.2, M(0x3a3e3a), -8.6, y0 + 1.15, 0); rayTargets.push(dm); solid(-8.66, -0.6, -8.54, 0.6, y0, y0 + 2.4); inter(dm, () => 'Дверь на этаж', () => toast('Заколочено. С той стороны играет музыка. Медленно.', 3.5)); for (const a of [-0.3, 0.3]) { const plank = box(0.05, 0.14, 1.5, M(0x6a4a2a), -8.5, y0 + 1.2 + a, 0); plank.rotation.x = a; } }
-    // floor plate
+    const y0 = L * H;
+    if (L > 0) {
+      const g = M(0xffffff, { map: repTex(TX.wallCorr, 3, 2) });
+      if (L <= 2) { wallBox(c.x0 + 0.15, -4.2, -5.5, -4.0, y0, y0 + H, paint); wallBox(-4.3, -4.2, c.x1, -4.0, y0, y0 + H, paint); wallBox(-5.5, -4.2, -4.3, -4.0, y0 + 2.4, y0 + H, paint, true); }
+      else {
+        wallBox(c.x0 + 0.15, -4.2, c.x1, -4.0, y0, y0 + H, paint);
+        const dm = box(1.2, 2.3, 0.07, M(0x3a3e3a), -4.9, y0 + 1.15, -4.18); rayTargets.push(dm);
+        inter(dm, () => 'Дверь на этаж', () => toast('Заколочено. С той стороны играет музыка. Медленно.', 3.5));
+        for (const a of [-0.3, 0.3]) { const pk = box(1.5, 0.14, 0.05, M(0x6a4a2a), -4.9, y0 + 1.2 + a, -4.14); pk.rotation.z = a; }
+      }
+    }
+    // partition of the basement stair room (door only on the ground level)
+    if (L === 0) { wallBox(c.x0 + 0.15, -6.5, -11.3, -6.3, 0, H, conc); wallBox(-9.9, -6.5, -9.4, -6.3, 0, H, conc); wallBox(-11.3, -6.5, -9.9, -6.3, 2.2, H, conc, true); }
+    else wallBox(c.x0 + 0.15, -6.5, -9.4, -6.3, y0, y0 + H, conc);
+    wallBox(-9.4, c.z0 + 0.15, -9.2, -6.5, y0, y0 + H, conc);   // east wall of the basement stair room (and its continuation above)
+    // landing slab (visual) for levels above ground; ground has a floor plane
+    if (L > 0) box(-4.3 - c.x0 - 0.15, 0.2, -4.2 - BLD.landZ, M(0x55524a), cx(c.x0 + 0.15, -4.3), y0 - 0.1, cx(BLD.landZ, -4.2));
+    // floor plate on the west wall
     const lbl = L === 12 ? '14' : String(L + 1);
-    plane(1.2, 1.2, B(0xffffff, { map: bigNumTex(lbl), transparent: true }), -11.83, y0 + 1.8, 0.3, Math.PI / 2);
+    plane(1.2, 1.2, B(0xffffff, { map: bigNumTex(lbl), transparent: true }), c.x0 + 0.16, y0 + 1.8, -5.3, Math.PI / 2);
   }
+  plane(-4.3 - c.x0 - 0.15, -4.2 - BLD.landZ, floorM, cx(c.x0 + 0.15, -4.3), 0.02, cx(BLD.landZ, -4.2), 0, -Math.PI / 2);
+  plane(-4.3 - fB.x0, BLD.landZ - hl.z1, floorM, cx(fB.x0, -4.3), 0.02, cx(BLD.landZ, hl.z1), 0, -Math.PI / 2);
+  // divider between the two flights
+  wallBox(-7.0, BLD.midZ, -6.8, BLD.landZ, 0, HT, paint);
   // steps (instanced)
-  const stepGeo = new T.BoxGeometry(1, 1, 1), stepMat = M(0x6e6a62);
-  const N = 13 * 2 * 10 + 26; const steps = new T.InstancedMesh(stepGeo, stepMat, N); let k = 0; const d = new T.Object3D();
-  const put = (cx, cy, cz, sx, sy, sz) => { d.position.set(cx, cy, cz); d.scale.set(sx, sy, sz); d.rotation.set(0, 0, 0); d.updateMatrix(); steps.setMatrixAt(k++, d.matrix); };
-  const ew = ST.laneE[1] - ST.laneE[0], ww = ST.laneW[1] - ST.laneW[0], ec = (ST.laneE[0] + ST.laneE[1]) / 2, wc = (ST.laneW[0] + ST.laneW[1]) / 2;
+  const stepM = M(0x6e6a62), N0 = 13 * 23 + 20; const steps = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), stepM, N0); let k = 0; const d = new T.Object3D();
+  const put = (x, y, z, sx, sy, sz) => { d.position.set(x, y, z); d.scale.set(sx, sy, sz); d.rotation.set(0, 0, 0); d.updateMatrix(); steps.setMatrixAt(k++, d.matrix); };
+  const aw = fA.x1 - fA.x0, bw = fB.x1 - fB.x0, ac = cx(fA.x0, fA.x1), bc = cx(fB.x0, fB.x1);
   for (let L = 0; L < 13; L++) {
     const y = L * H;
     for (let i = 0; i < 10; i++) {
-      put(ec - 0.015, y + (i + 1) * 0.17 - 0.2, 1.6 + (i + 0.5) * 0.28, ew - 0.03, 0.4, 0.28);
-      put(wc, y + 1.7 + (i + 1) * 0.17 - 0.2, 4.4 - (i + 0.5) * 0.28, ww, 0.4, 0.28);
+      put(ac, y + (i + 1) * 0.17 - 0.2, BLD.landZ - (i + 0.5) * 0.44, aw - 0.03, 0.4, 0.42);
+      put(bc, y + 1.7 + (i + 1) * 0.17 - 0.2, BLD.midZ + (i + 0.5) * 0.44, bw - 0.03, 0.4, 0.42);
     }
-    put(-10.19, y + 1.7 - 0.1, 5.125, 3.32, 0.2, 1.45); // mid landing
-    if (L > 0) put(-10.19, y - 0.1, 0.3, 3.32, 0.2, 2.6); // floor landing
+    put(cx(fB.x0, fA.x1), y + 1.6, cx(c.z0, BLD.midZ), fA.x1 - fB.x0, 0.2, BLD.midZ - c.z0);   // mid landing
   }
+  const n = bs.rampZ0 - bs.rampZ1, cnt = 17;
+  for (let i = 0; i < cnt; i++) put(cx(bs.rampX0, bs.rampX1), -(i / cnt) * 3.0 - 0.2, bs.rampZ0 - (i + 0.5) * (n / cnt), bs.rampX1 - bs.rampX0, 0.4, n / cnt - 0.01);
   steps.count = k; world.add(steps);
-  // rails + posts (instanced)
-  const railM = M(0x2a2420), railI = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), railM, 13 * 10); let ri = 0;
-  const putR = (x, y, z, sx, sy, sz, rx) => { d.position.set(x, y, z); d.scale.set(sx, sy, sz); d.rotation.set(rx, 0, 0); d.updateMatrix(); railI.setMatrixAt(ri++, d.matrix); };
-  for (let L = 0; L < 13; L++) {
-    const y = L * H;
-    putR(-10.02, y + 0.85 + 0.95, 3.0, 0.06, 0.06, 3.3, -0.545); putR(-10.43, y + 2.55 + 0.95, 3.0, 0.06, 0.06, 3.3, 0.545);
-    for (let i = 0; i < 4; i++) { const z = 1.9 + i * 0.75; putR(-10.02, y + (z - 1.6) / 2.8 * 1.7 + 0.48, z, 0.04, 0.95, 0.04, 0); putR(-10.43, y + 1.7 + (4.4 - z) / 2.8 * 1.7 + 0.48, z, 0.04, 0.95, 0.04, 0); }
-  }
-  railI.count = ri; world.add(railI);
-  solid(ST.gap[0], 1.55, ST.gap[1], 4.45, -1, 500);
   // walkable surfaces: levels 0..2
   for (let L = 0; L <= 2; L++) {
     const y = L * H;
-    surf(ST.x0, -1.0, ST.x1, 1.6, y);
-    if (L <= 1) { ramp(ST.laneE[0], ST.laneE[1], 1.6, y, 4.4, y + 1.7); surf(ST.x0, 4.4, ST.x1, 5.85, y + 1.7); ramp(ST.laneW[0], ST.laneW[1], 4.4, y + 1.7, 1.6, y + 3.4); }
+    surf(c.x0, BLD.landZ, c.x1, c.z1, y);
+    if (L <= 1) { ramp(fA.x0, fA.x1, BLD.landZ, y, BLD.midZ, y + 1.7); surf(fB.x0, c.z0, fA.x1, BLD.midZ, y + 1.7); ramp(fB.x0, fB.x1, BLD.midZ, y + 1.7, BLD.landZ, y + 3.4); }
   }
-  // barricade at floor 3 going up
+  // barricade at the foot of the east flight on level 3 (going up)
   const by = 2 * H;
-  solid(ST.laneE[0], 1.6, ST.laneE[1], 2.2, by, by + 3);
-  const bar = plane(1.3, 0.65, M(0xffffff, { map: TX.barricade }), -9.25, by + 1.15, 1.95, Math.PI);
+  solid(fA.x0, BLD.landZ - 0.6, fA.x1, BLD.landZ, by, by + 3);
+  const bar = plane(1.3, 0.65, M(0xffffff, { map: TX.barricade }), cx(fA.x0, fA.x1), by + 1.15, BLD.landZ + 0.05, 0);
   inter(bar, () => 'Табличка', () => toast('«Закрыто до второй ночи». Сверху кто-то спускается. Или нет.', 3.5));
-  for (const yy of [0.6, 1.0, 1.5]) { const t = box(1.5, 0.08, 0.02, M(0xd8c22a), -9.25, by + yy, 2.0); t.rotation.z = (yy - 1) * 0.3; }
-  box(0.5, 0.5, 0.5, M(0x4a3a2a), -9.5, by + 0.25 + 0.17, 2.4);
-  // basement door at ground west lane
-  solid(ST.laneW[0], 1.6, ST.laneW[1], 1.95, 0, 1.75);
-  makeDoor('basement', { x: -11.85, y: 0, z: 1.8, w: 1.4, h: 1.6, kind: 'basement', dir: -1, color: 0x2a2a28, locked: true });
-  // stair lights for levels 0..2 (+ dark bulbs above)
+  for (const yy of [0.6, 1.0, 1.5]) { const t = box(2.3, 0.08, 0.02, M(0xd8c22a), cx(fA.x0, fA.x1), by + yy, BLD.landZ + 0.02); t.rotation.z = (yy - 1) * 0.3; }
+  box(0.5, 0.5, 0.5, M(0x4a3a2a), -5.0, by + 0.42, BLD.landZ - 0.35);
+  // basement: door, ramp, hall
+  makeDoor('basement', { x: -11.3, y: 0, z: BLD.bdoor.z, w: 1.4, h: 2.2, rot: 0, kind: 'basement', dir: -1, color: 0x2a2a28, locked: true, col: [-11.3, BLD.bdoor.z - 0.06, -9.9, BLD.bdoor.z + 0.06] });
+  ramp(bs.rampX0, bs.rampX1, bs.rampZ0, 0, bs.rampZ1, bs.y);
+  { const g0 = surfaces.find(q => q.x0 === -400 && q.y === 0); if (g0) g0.hole = [c.x0, c.z0, -9.4, BLD.landZ]; }   // the outdoor ground has a hole over the basement stairs
+  surf(c.x0, c.z0, -9.4, bs.rampZ1, bs.y); surf(c.x0, bs.rampZ1, -9.4, -6.4, bs.y); surf(-9.4, hl.z0, hl.x1, hl.z1, bs.y);
+  const bb = bs.y - 0.4, bt = -0.15;
+  wallBox(c.x0 - 0.3, c.z0 - 0.3, c.x0, -6.3, bb, 0, conc);                 // west
+  wallBox(c.x0, c.z0 - 0.3, hl.x1 + 0.2, c.z0, bb, 0, conc);                // north
+  wallBox(c.x0, -6.5, -9.4, -6.3, bb, 0, conc);                              // partition under the door
+  wallBox(-9.4, -10.6, -9.2, -6.5, bb, 0, conc); wallBox(-9.4, c.z0, -9.2, -10.6, -0.95, 0, conc, true);  // east wall of the stair room, opening z -12..-10.6
+  wallBox(hl.x0, hl.z1, hl.x1 + 0.2, hl.z1 + 0.2, bb, 0, conc); wallBox(hl.x1, hl.z0, hl.x1 + 0.2, hl.z1, bb, 0, conc);
+  plane(-9.4 - c.x0, -6.4 - c.z0, ceilM, cx(c.x0, -9.4), 3.38, cx(c.z0, -6.4), 0, Math.PI / 2);
+  plane(hl.x1 - hl.x0, hl.z1 - hl.z0, dbl, cx(hl.x0, hl.x1), bt, cx(hl.z0, hl.z1), 0, Math.PI / 2);
+  plane(hl.x1 - hl.x0, hl.z1 - hl.z0, M(0x2e2d2a), cx(hl.x0, hl.x1), bs.y + 0.02, cx(hl.z0, hl.z1), 0, -Math.PI / 2);
+  plane(-9.4 - c.x0, -6.4 - c.z0, M(0x2e2d2a), cx(c.x0, -9.4), bs.y + 0.02, cx(c.z0, -6.4), 0, -Math.PI / 2).visible = false;
+  box(13, 0.16, 0.16, M(0x5a5048), cx(hl.x0, hl.x1), -0.8, hl.z0 + 0.3); box(0.16, 0.16, 3.2, M(0x5a5048), -4, -1.0, cx(hl.z0, hl.z1));
+  const boiler = new T.Mesh(cyl(0.7, 0.7, 2.0, 12), M(0x4a3a30)); boiler.position.set(2.8, bs.y + 1.0, -10.2); world.add(boiler); solid(2.1, -10.9, 3.5, -9.5, bs.y, bs.y + 2);
+  // lights: one per walkable level + the basement
   W.stairLights = []; W.stairBulbs = [];
   for (let L = 0; L < 13; L++) {
-    const b = box(0.25, 0.1, 0.25, B(0x221d18), -10.2, L * H + 3.1, 0.3); W.stairBulbs.push(b);
-    if (L <= 2) { const l = VPoint(0xd8e8d0, 0, 9, 1.5); l.position.set(-10.2, L * H + 2.8, 0.3); W.stairLights.push(l); }
+    const b = box(0.25, 0.1, 0.25, B(0x221d18), -5.5, L * H + 3.05, -5.3); W.stairBulbs.push(b);
+    if (L <= 2) { const l = VPoint(0xd8e8d0, 0, 9, 1.5); l.position.set(-6.5, L * H + 2.7, -6.8); W.stairLights.push(l); }
   }
-  W.stairPos = L => ({ landing: new T.Vector3(-9.3, L * H, 0.3), mid: new T.Vector3(-10.2, L * H + 1.7, 5.1) });
+  W.basLight = VPoint(0xb8c8b8, 0, 10, 1.5); W.basLight.position.set(-3, bs.y + 2.3, -10);
+  W.stairPos = L => ({ landing: BLD.landPos(L), mid: BLD.midPos(L) });
 }
 
 /* ---------- floors 2 and 3 ---------- */
 const THEMES = ['soviet', 'velvet', 'hunter', 'kids', 'flood', 'upside'];
 const THEME_NAME = { soviet: 'Советский', velvet: 'Бархатный люкс', hunter: 'Охотничий', kids: 'Детский', flood: 'Затопленный', upside: 'Перевёрнутый' };
-const SLOTS = [{ k: 'A', cx: -4.5, side: 1 }, { k: 'B', cx: 3, side: 1 }, { k: 'C', cx: -4.5, side: -1 }, { k: 'D', cx: 3, side: -1 }];
+const SLOTS = [{ k: 'A', cx: -4.5, side: 1 }, { k: 'B', cx: 3, side: 1 }, { k: 'C', cx: 0.5, side: -1 }, { k: 'D', cx: 5.5, side: -1 }];
 function buildFloor(L) {
-  const y = L * H;
+  const y = L * H, cz = BLD.corrZ, ch = BLD.corrHalf, zS = cz + ch, zN = cz - ch;   // south / north edge of the corridor
   W.floorG = W.floorG || {}; const fg = new T.Group(); world.add(fg); W.floorG[L] = fg; curParent = fg;
-  // room definitions for this floor
-  const defs = SLOTS.map((s, i) => ({ num: (L + 1) * 100 + i + 1, level: L, floor: L + 1, cx: s.cx, side: s.side, zc: s.side * 1.2, window: s.side > 0, far: s.cx > 0, theme: null, bath: null, beds: null, light: false, occupant: null, unlocked: false }));
+  const defs = SLOTS.map((s, i) => ({ num: (L + 1) * 100 + i + 1, level: L, floor: L + 1, cx: s.cx, side: s.side, zc: s.side > 0 ? zS : zN, window: s.side > 0, far: s.cx > 0, theme: null, bath: null, beds: null, light: false, occupant: null, unlocked: false }));
   defs.forEach(d => { d.theme = rpick(THEMES); d.bath = R() < 0.5 ? 'ванна' : 'душ'; d.beds = R() < 0.4 ? 2 : 1; });
   rooms.push(...defs);
   const corrMat = len => M(0xffffff, { map: repTex(TX.wallCorr, Math.max(1, len / 1.6), 2) });
   // corridor floor/ceiling
   const run = TX.runner.clone(); run.needsUpdate = true; run.wrapS = run.wrapT = T.RepeatWrapping; run.center.set(0.5, 0.5); run.rotation = Math.PI / 2; run.repeat.set(1, 8);
-  plane(20.35, 2.4, M(0xffffff, { map: run }), 1.675, y + 0.012, 0, 0, -Math.PI / 2);
-  plane(20.35, 2.4, M(0x2b2620), 1.675, y + 3.0, 0, 0, Math.PI / 2);
-  surf(-8.5, -5.85, 11.85, 5.85, y);
+  plane(20.35, 2.4, M(0xffffff, { map: run }), 1.675, y + 0.012, cz, 0, -Math.PI / 2);
+  plane(20.35, 2.4, M(0x2b2620), 1.675, y + 3.0, cz, 0, Math.PI / 2);
+  surf(-8.5, -6.85, 11.85, 4.85, y);
   // corridor walls with door gaps
   const doorGap = d => d.side > 0 ? [d.cx - 1.9, d.cx - 0.9] : [d.cx + 0.9, d.cx + 1.9];
   const buildWall = (side, gaps) => {
-    const z0 = side > 0 ? 1.2 : -1.35, z1 = side > 0 ? 1.35 : -1.2;
+    const z0 = side > 0 ? zS : zN - 0.15, z1 = side > 0 ? zS + 0.15 : zN;
     const pts = [-8.5, 11.85]; gaps.forEach(g => pts.push(g[0], g[1]));
     defs.filter(d => d.side === side).forEach(d => pts.push(d.cx - 2.5, d.cx + 2.5));
-    if (side < 0) pts.push(7, 10);
+    if (side < 0) pts.push(8.4, 11.6);
     const xsSorted = [...new Set(pts)].sort((a, b) => a - b);
     for (let i = 0; i < xsSorted.length - 1; i++) {
       const a = xsSorted[i], b = xsSorted[i + 1], mid = (a + b) / 2; if (b - a < 0.01) continue;
@@ -372,33 +416,42 @@ function buildFloor(L) {
       if (inGap) wallBox(a, z0, b, z1, y + 2.3, y + 3.2, mats, true); else wallBox(a, z0, b, z1, y, y + 3.2, mats);
     }
   };
-  const closetGap = [7.3, 8.3];
+  const closetGap = [8.9, 9.9], stairGap = [-5.5, -4.3];
   buildWall(1, defs.filter(d => d.side > 0).map(doorGap));
-  buildWall(-1, defs.filter(d => d.side < 0).map(doorGap).concat([closetGap]));
-  // corridor end window + elevator + floor sign
-  plane(1.3, 1.5, B(0xffffff, { map: TX.night }), 11.84, y + 1.7, 0, -Math.PI / 2);
-  plane(2.4, 3.0, corrMat(2.4), 11.845, y + 1.5, 0, -Math.PI / 2);
-  box(1.4, 2.5, 0.06, M(0x6b6560), -7.75, y + 1.25, -1.17);
-  const ed = [box(0.6, 2.3, 0.04, M(0x8b8580, { shininess: 40 }), -8.05, y + 1.15, -1.13), box(0.6, 2.3, 0.04, M(0x8b8580, { shininess: 40 }), -7.45, y + 1.15, -1.13)];
-  inter(ed, () => 'Лифт', () => elevatorInteract(new T.Vector3(-7.75, y + 1.4, -1)));
-  plane(0.9, 0.45, M(0xffffff, { map: numTex((L + 1) + ' ЭТАЖ') }), -7.6, y + 1.7, 1.19, Math.PI);
+  buildWall(-1, defs.filter(d => d.side < 0).map(doorGap).concat([closetGap, stairGap]));
+  // corridor end window
+  plane(1.3, 1.5, B(0xffffff, { map: TX.night }), 11.84, y + 1.7, cz, -Math.PI / 2);
+  plane(2.4, 3.0, corrMat(2.4), 11.845, y + 1.5, cz, -Math.PI / 2);
+  // elevator: west end of the corridor, directly above the lobby elevator (doors z -1.8..-0.2)
+  wallBox(-8.7, zN - 0.15, -8.5, zS + 0.15, y, y + 3.2, M(0x6b6560));
+  const ed = [box(0.04, 2.3, 0.72, M(0x8b8580, { shininess: 40 }), -8.47, y + 1.15, cz - 0.4), box(0.04, 2.3, 0.72, M(0x8b8580, { shininess: 40 }), -8.47, y + 1.15, cz + 0.4)];
+  inter(ed, () => 'Лифт', () => elevatorInteract(new T.Vector3(-8.2, y + 1.4, cz)));
+  plane(0.9, 0.45, M(0xffffff, { map: numTex((L + 1) + ' ЭТАЖ') }), -8.47, y + 2.2, cz, Math.PI / 2);
+  // passage to the stair core
+  const pz0 = BLD.core.z1, pz1 = zN - 0.15, pmat = corrMat(2);
+  wallBox(-5.7, pz0, -5.5, pz1, y, y + 3.2, pmat); wallBox(-4.3, pz0, -4.1, pz1, y, y + 3.2, pmat);
+  plane(1.2, pz1 - pz0, M(0x2a2b28), -4.9, y + 0.02, (pz0 + pz1) / 2, 0, -Math.PI / 2); plane(1.2, pz1 - pz0, M(0x2b2620), -4.9, y + 3.0, (pz0 + pz1) / 2, 0, Math.PI / 2);
+  surf(-5.5, pz0, -4.3, zN, y);
+  makeDoor('st' + L, { x: -5.5, y, z: (zN - 0.15 + zN) / 2, w: 1.2, rot: 0, kind: 'stair', col: [-5.5, zN - 0.15 + 0.01, -4.3, zN - 0.01], dir: 1, color: 0x4b4f4a });
+  plane(0.5, 0.25, M(0xffffff, { map: numTex('ЛЕСТНИЦА') }), -4.9, y + 2.55, zN + 0.01, 0);
   // corridor lights (2 real + 4 fixtures)
   W.corridorLights = W.corridorLights || {}; W.corridorBulbs = W.corridorBulbs || {};
   W.corridorLights[L] = []; W.corridorBulbs[L] = [];
-  for (const x of [-6, -1, 4, 9]) { const b = box(0.5, 0.06, 0.3, B(0x221d18), x, y + 2.96, 0); W.corridorBulbs[L].push(b); }
-  for (const x of [-3, 6]) { const l = VPoint(0xffd9a0, 0, 10, 1.5); l.position.set(x, y + 2.7, 0); W.corridorLights[L].push(l); }
-  // linen closet
-  const cm = M(0x4a4a44);
-  wallBox(6.85, -3.6, 7.0, -1.35, y, y + 3.2, cm); wallBox(10.0, -3.6, 10.15, -1.35, y, y + 3.2, cm); wallBox(7.0, -3.75, 10.0, -3.6, y, y + 3.2, cm);
-  plane(3, 2.25, M(0x2e2f2b), 8.5, y + 0.02, -2.47, 0, -Math.PI / 2);
-  plane(0.9, 0.22, B(0xbbbbbb, { map: TX.closet }), 7.8, y + 2.55, -1.19);
-  makeDoor('cl' + L, { x: 7.3, y, z: -1.27, w: 1.0, kind: 'closet', dir: 1, col: [7.3, -1.33, 8.3, -1.21], color: 0x4b4f4a });
-  box(0.5, 1.6, 2.4, M(0x3a3226), 9.7, y + 0.8, -2.4); solid(9.45, -3.6, 10, -1.35, y, y + 1.7);
-  for (const z of [-3.1, -2.4, -1.7]) { const t = box(0.4, 0.22, 0.5, M(0xefefe6), 9.65, y + 1.05, z); inter(t, () => 'Взять полотенца', () => takeItem('towels')); }
+  for (const x of [-6, -1, 4, 9]) { const b = box(0.5, 0.06, 0.3, B(0x221d18), x, y + 2.96, cz); W.corridorBulbs[L].push(b); }
+  for (const x of [-3, 6]) { const l = VPoint(0xffd9a0, 0, 10, 1.5); l.position.set(x, y + 2.7, cz); W.corridorLights[L].push(l); }
+  // linen closet (north side, east end)
+  const cm = M(0x4a4a44), cx0 = 8.4, cx1 = 11.6, cb = -5.9;
+  wallBox(cx0, cb, cx0 + 0.15, zN - 0.15, y, y + 3.2, cm); wallBox(cx1 - 0.15, cb, cx1, zN - 0.15, y, y + 3.2, cm); wallBox(cx0 + 0.15, cb - 0.15, cx1 - 0.15, cb, y, y + 3.2, cm);
+  plane(cx1 - cx0 - 0.3, zN - 0.15 - cb, M(0x2e2f2b), (cx0 + cx1) / 2, y + 0.02, (cb + zN - 0.15) / 2, 0, -Math.PI / 2);
+  plane(0.9, 0.22, B(0xbbbbbb, { map: TX.closet }), 9.4, y + 2.55, zN + 0.01, 0);
+  makeDoor('cl' + L, { x: 8.9, y, z: (zN - 0.15 + zN) / 2, w: 1.0, kind: 'closet', dir: 1, col: [8.9, zN - 0.14, 9.9, zN - 0.01], color: 0x4b4f4a });
+  box(0.5, 1.6, 2.4, M(0x3a3226), cx1 - 0.45, y + 0.8, -4.2); solid(cx1 - 0.7, -5.4, cx1 - 0.15, -3.0, y, y + 1.7);
+  for (const z of [-4.9, -4.2, -3.5]) { const t = box(0.4, 0.22, 0.5, M(0xefefe6), cx1 - 0.5, y + 1.05, z); inter(t, () => 'Взять полотенца', () => takeItem('towels')); }
   // rooms
   defs.forEach(d => buildRoom(d));
   curParent = null;
 }
+
 function themeWallMat(theme, len) {
   const t = { soviet: TX.wallSoviet, velvet: TX.wallVelvet, hunter: TX.wallHunter, kids: TX.wallKids, flood: TX.wallFlood, upside: TX.wallSoviet }[theme];
   return M(0xffffff, { map: repTex(t, Math.max(1, len / 1.6), 2) });
@@ -529,20 +582,26 @@ const WPN = {};
 function N(id, x, y, z) { WPN[id] = { id, p: new T.Vector3(x, y, z), n: [] }; }
 function E(a, b) { WPN[a].n.push(b); WPN[b].n.push(a); }
 function buildWaypoints() {
-  N('lb_st', -4.9, 0, -3.0); N('cn1', -4.9, 0, -5.2); N('cn2', -10.2, 0, -5.2); N('cn3', -10.2, 0, -2.0); N('lb_a', -4, 0, 0.2); N('lb_b', 0, 0, 0.5); N('lb_c', 4, 0, 0.3); N('lb_door', 0, 0, 4.6); N('lb_srv', 5.5, 0, -3.0); N('sv1', 5.5, 0, -6.5); N('sv2', 5.5, 0, -10);
-  E('lb_st', 'lb_a'); E('lb_a', 'lb_b'); E('lb_b', 'lb_c'); E('lb_b', 'lb_door'); E('lb_c', 'lb_srv'); E('lb_srv', 'sv1'); E('sv1', 'sv2'); E('lb_st', 'cn1'); E('cn1', 'cn2'); E('cn2', 'cn3');
-  N('bs', -11.15, 0, 1.2);
+  N('lb_door', 0, 0, 4.6); N('lb_a', -4, 0, 0.2); N('lb_b', 0, 0, 0.5); N('lb_c', 4, 0, 0.3); N('lb_st', -4.9, 0, -3.0); N('lb_srv', 5.5, 0, -3.0); N('sv1', 5.5, 0, -6.5); N('sv2', 5.5, 0, -10);
+  E('lb_st', 'lb_a'); E('lb_a', 'lb_b'); E('lb_b', 'lb_c'); E('lb_b', 'lb_door'); E('lb_c', 'lb_srv'); E('lb_srv', 'sv1'); E('sv1', 'sv2');
+  // stair core: landing, east flight (north), mid landing, west flight (south)
   for (let L = 0; L <= 2; L++) {
-    const y = L * H; N('ld' + L, -9.3, y, 0.2);
-    if (L <= 1) { N('f1' + L, -9.25, y + 0.85, 3.0); N('ml' + L, -10.2, y + 1.7, 5.1); N('f2' + L, -11.15, y + 2.55, 3.0); E('ld' + L, 'f1' + L); E('f1' + L, 'ml' + L); E('ml' + L, 'f2' + L); }
-    if (L >= 1) E('f2' + (L - 1), 'ld' + L);
+    const y = L * H;
+    N('ld' + L, -4.9, y, -5.3);
+    if (L <= 1) { N('fa' + L, -5.55, y + 0.85, -8.6); N('ml' + L, -6.9, y + 1.7, -11.4); N('fb' + L, -8.1, y + 2.55, -8.6); E('ld' + L, 'fa' + L); E('fa' + L, 'ml' + L); E('ml' + L, 'fb' + L); }
+    if (L >= 1) { N('ft' + L, -8.1, y, -6.0); E('fb' + (L - 1), 'ft' + L); E('ft' + L, 'ld' + L); }
   }
-  E('bs', 'ld0'); E('ld0', 'cn3');
+  E('lb_st', 'ld0');
+  // basement: hall -> opening -> bottom of ramp -> up to the door -> landing
+  N('bs', -3, BLD.bas.y, -10); N('bo', -9.3, BLD.bas.y, -11.2); N('br1', -10.6, BLD.bas.y, -11.6); N('br2', -10.6, BLD.bas.y / 2, -8.9); N('bd', -10.6, 0, -5.6);
+  E('bs', 'bo'); E('bo', 'br1'); E('br1', 'br2'); E('br2', 'bd'); E('bd', 'ld0');
+  // upper floors: corridor nodes at z = corrZ, a passage from the stair landing
   for (const L of [1, 2]) {
-    const y = L * H, xs = [-7.6, -4.5, -1, 3, 7.8, 11]; xs.forEach((x, i) => { N(`c${L}_${i}`, x, y, 0); if (i) E(`c${L}_${i - 1}`, `c${L}_${i}`); });
-    E('ld' + L, `c${L}_0`);
+    const y = L * H, xs = [-7.6, -4.5, -1, 3, 7.8, 11]; xs.forEach((x, i) => { N(`c${L}_${i}`, x, y, BLD.corrZ); if (i) E(`c${L}_${i - 1}`, `c${L}_${i}`); });
+    N('pc' + L, -4.9, y, -3.2); E('ld' + L, 'pc' + L); E('pc' + L, `c${L}_1`);
   }
 }
+
 function nearestNode(p) { let best = null, bd = 1e9; for (const id in WPN) { const n = WPN[id]; const dy = Math.abs(n.p.y - p.y); const d = n.p.distanceTo(p) + dy * 2; if (d < bd) { bd = d; best = id; } } return best; }
 function pathTo(a, b) {
   if (a === b) return [a]; const prev = { [a]: null }, q = [a];
