@@ -86,7 +86,7 @@ function applyLobby3D(n0) {
     draw('');
     const grp = new T.Group(); const body = new T.Mesh(new T.BoxGeometry(0.24, 0.06, 0.13), new T.MeshLambertMaterial({ color: 0x302e2a })); grp.add(body);
     const face = new T.Mesh(new T.PlaneGeometry(0.2, 0.058), new T.MeshBasicMaterial({ map: at })); face.rotation.x = -1.15; face.position.set(0, 0.037, 0.0); grp.add(face);
-    grp.position.set(ph.x - 0.04, ph.y - 0.1, ph.z + 0.27); world.add(grp); W.aonGrp = grp; W.aonShow = draw; }
+    grp.position.set(ph.x - 0.34, ph.y - 0.1, ph.z + 0.27); world.add(grp); W.aonGrp = grp; W.aonShow = draw; }
   const nc = node.papers ? ctr(node.papers) : P3(-0.5, 0.83, -2.2); moveTo(W.px.note, nc.x, nc.y + 0.05, nc.z); W.px.note.rotation.set(-Math.PI / 2, 0, 0, 'YXZ'); W.px.note.scale.set(1.3, 1.3, 1.3);
   const lc = node.ledger ? ctr(node.ledger) : P3(0.1, 1.17, -2.07); moveTo(W.px.book, lc.x, lc.y, lc.z);
   moveTo(W.px.mon, 1.3, 1.31, -2.0); W.px.mon.scale.set(1.1, 1, 1);
@@ -122,8 +122,45 @@ function applyLobby3D(n0) {
     const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), new T.MeshBasicMaterial()); m.position.set(cx, cy, cz); m.visible = false; world.add(m);
     inter(m, () => window.isSitting && window.isSitting() ? null : label, () => sitDown(x, z, face, 1.18), 2.4);
   };
-  seat(-5.6, 0.55, 1.3, 2.3, 0.9, 1.1, 'Сесть на диван', -5.6, 1.35, Math.PI);
+  for (const sx of [-6.4, -5.6, -4.8]) seat(sx, 0.55, 1.3, 0.76, 0.9, 1.1, 'Сесть на диван', sx, 1.4, Math.PI);
+  seat(-3.5, 0.5, 2.5, 0.95, 0.95, 1.0, 'Сесть в кресло', -3.5, 2.5, Math.PI);
 
+  // 7b) front door: the two baked leaves are cut out of the lobby meshes and hung on hinges, so the drawn door itself opens
+  try {
+    const fd = doors && doors.front;
+    if (fd) {
+      const src = []; inst.traverse(o => { if (o.isMesh && o.material && ['wood_dark', 'brass', 'black'].includes(o.material.name)) src.push(o); });
+      const LD = LOBBY3D.leafData = LOBBY3D.leafData || new Map();
+      const PZ = 5.85, HX = [-1.0, 1.0], leaves = [new T.Group(), new T.Group()];
+      src.forEach(o => {
+        const geo = o.geometry; let ent = LD.get(geo.uuid);
+        if (!ent) {
+          const idx = geo.index ? geo.index.array : null, pos = geo.attributes.position, nT = idx ? idx.length : pos.count, keep = [], tris = [[], []];
+          for (let t = 0; t < nT; t += 3) {
+            const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, c = idx ? idx[t + 2] : t + 2;
+            const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3, cy = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3, cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
+            if (Math.abs(cx) <= 1.0 && cy < 2.55 && cz > 5.75 && cz < 5.97) tris[cx < 0 ? 0 : 1].push(a, b, c); else keep.push(a, b, c);
+          }
+          ent = { geos: [null, null] };
+          [0, 1].forEach(li => {
+            const ids = tris[li]; if (!ids.length) return;
+            const map = new Map(), vs = []; ids.forEach(v => { if (!map.has(v)) { map.set(v, vs.length); vs.push(v); } });
+            const ng = new T.BufferGeometry();
+            for (const name of ['position', 'normal', 'uv', 'uv2']) { const at = geo.attributes[name]; if (!at) continue; const arr = new Float32Array(vs.length * at.itemSize); vs.forEach((v, n) => { for (let k = 0; k < at.itemSize; k++) { let val = at.array[v * at.itemSize + k]; if (name === 'position') { if (k === 0) val -= HX[li]; if (k === 2) val -= PZ; } arr[n * at.itemSize + k] = val; } }); ng.setAttribute(name, new T.BufferAttribute(arr, at.itemSize)); }
+            ng.setIndex(ids.map(v => map.get(v))); ent.geos[li] = ng;
+          });
+          if (ids0(keep)) geo.setIndex(keep);
+          LD.set(geo.uuid, ent);
+        }
+        [0, 1].forEach(li => { if (!ent.geos[li]) return; const m = new T.Mesh(ent.geos[li], o.material); m.frustumCulled = false; leaves[li].add(m); });
+      });
+      function ids0(a) { return a.length > 0; }
+      leaves.forEach((g, li) => { g.position.set(HX[li], 0, PZ); src[0].parent.add(g); });
+      const oldP = doors.front.pivot; if (oldP) oldP.visible = false;
+      const sgn = [1, -1];
+      doors.front.pivot = { position: oldP.position, rotation: { set y(v) { leaves[0].rotation.y = sgn[0] * v; leaves[1].rotation.y = sgn[1] * v; }, get y() { return leaves[0].rotation.y; } }, visible: false };
+    }
+  } catch (e) { console.warn('front door leaves', e); }
   // 8) curtains: the four baked panels (one mesh with the 'curtain' material) are re-cut into movable pieces that stretch to the window centre
   try {
     let cur = null; inst.traverse(o => { if (o.isMesh && o.material && o.material.name === 'curtain') cur = o; });

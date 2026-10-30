@@ -288,6 +288,7 @@ function buildServiceWing() {
   makeDoor('service', { x: 4.9, y: 0, z: -4.1, w: 1.2, kind: 'service', col: [4.9, -4.16, 6.1, -4.04], dir: 1, color: 0x4b4f4a });
   makeDoor('st0', { x: -5.5, y: 0, z: -4.1, w: 1.2, rot: 0, kind: 'stair', col: [-5.5, -4.16, -4.3, -4.04], dir: 1, color: 0x4b4f4a });
   lobbyBackSkin();
+  { const cr = M(0xc2b48f); for (const [a, b] of [[4.9, 6.1], [-5.5, -4.3]]) box(b - a, 0.14, 0.09, cr, (a + b) / 2, 3.14, -3.955); }   // cornice over the door gaps (baked trim is missing there)
   const cw = M(0x5a5d55);
   wallBox(4.2, -11.2, 4.4, -4.2, 0, 2.8, cw); wallBox(6.6, -11.2, 6.8, -4.2, 0, 2.8, cw); wallBox(4.4, -11.2, 6.6, -11, 0, 2.8, cw);
   plane(2.2, 7, M(0x2a2b28), 5.5, 2.8, -7.6, 0, Math.PI / 2); plane(2.2, 7, M(0x2e2f2b), 5.5, 0.025, -7.6, 0, -Math.PI / 2);
@@ -467,10 +468,21 @@ function buildFloor(L) {
   // stair hall: the landing opens straight to the corridor; the fire door sits in the corridor wall
   const pz0 = BLD.core.z1, pz1 = zN - 0.15, hm = M(0xffffff, { map: repTex(TX.wallStair, 2, 1) });
   wallBox(-8.65, pz0 - 0.2, -8.5, pz1, y, y + 3.2, hm); wallBox(-4.3, pz0, -4.1, pz1, y, y + 3.2, hm);
-  plane(4.2, pz1 - pz0, M(0x2a2b28), -6.4, y + 0.02, (pz0 + pz1) / 2, 0, -Math.PI / 2); plane(4.2, pz1 - pz0, M(0x2b2620), -6.4, y + 3.0, (pz0 + pz1) / 2, 0, Math.PI / 2);
+  plane(4.2, pz1 - pz0, M(0x2a2b28), -6.4, y + 0.02, (pz0 + pz1) / 2, 0, -Math.PI / 2); plane(4.2, pz1 - pz0, M(0x4a4540), -6.4, y + 3.19, (pz0 + pz1) / 2, 0, Math.PI / 2);
   surf(-8.5, pz0, -4.3, zN, y);
   makeDoor('st' + L, { x: -5.5, y, z: (zN - 0.15 + zN) / 2, w: 1.2, rot: 0, kind: 'stair', col: [-5.5, zN - 0.15 + 0.01, -4.3, zN - 0.01], dir: 1, color: 0x4b4f4a });
   { const ex = plane(0.46, 0.144, B(0xffffff, { map: W.exitTex }), -4.9, y + 2.5, zN + 0.01, 0); }
+  // cosy nook in the stair hall: bench + table with a lamp + one armchair (the way from the landing to the door stays free)
+  { const wd = M(0x6a4a2c), wd2 = M(0x3a2a1c), fab = M(0x7a3a2a), sh = B(0xffe3a8), zc0 = -3.35;
+    const bench = [box(0.5, 0.06, 1.6, wd, -8.2, y + 0.45, zc0), box(0.5, 0.4, 0.06, wd, -8.43, y + 0.7, zc0), box(0.06, 0.45, 0.06, wd2, -8.0, y + 0.22, zc0 - 0.7), box(0.06, 0.45, 0.06, wd2, -8.0, y + 0.22, zc0 + 0.7), box(0.06, 0.45, 0.06, wd2, -8.4, y + 0.22, zc0 - 0.7), box(0.06, 0.45, 0.06, wd2, -8.4, y + 0.22, zc0 + 0.7)];
+    solid(-8.5, zc0 - 0.8, -7.9, zc0 + 0.8, y, y + 0.9);
+    const tb = [box(0.6, 0.05, 0.6, wd, -7.2, y + 0.55, zc0), box(0.06, 0.55, 0.06, wd2, -7.2, y + 0.27, zc0)];
+    box(0.35, 0.02, 0.35, wd2, -7.2, y + 0.03, zc0); box(0.12, 0.2, 0.12, sh, -7.2, y + 0.7, zc0 + 0.1); box(0.04, 0.12, 0.04, wd2, -7.2, y + 0.59, zc0 + 0.1);
+    solid(-7.5, zc0 - 0.3, -6.9, zc0 + 0.3, y, y + 0.8);
+    const ac = [box(0.7, 0.4, 0.7, fab, -6.35, y + 0.3, zc0), box(0.7, 0.55, 0.14, fab, -6.35, y + 0.75, zc0 - 0.31), box(0.12, 0.3, 0.7, fab, -6.7, y + 0.5, zc0), box(0.12, 0.3, 0.7, fab, -6.0, y + 0.5, zc0)];
+    solid(-6.75, zc0 - 0.38, -5.95, zc0 + 0.38, y, y + 0.9);
+    inter(bench.slice(0, 2), () => (window.isSitting && window.isSitting()) ? null : 'Сесть на скамью', () => sitDown(-7.95, zc0, -Math.PI / 2, 1.1), 2.4);
+    inter(ac, () => (window.isSitting && window.isSitting()) ? null : 'Сесть в кресло', () => sitDown(-6.35, zc0, Math.PI, 1.18), 2.4); }
   // corridor lights (2 real + 4 fixtures)
   W.corridorLights = W.corridorLights || {}; W.corridorBulbs = W.corridorBulbs || {};
   W.corridorLights[L] = []; W.corridorBulbs[L] = [];
@@ -571,7 +583,7 @@ function buildRoom(d) {
   inter(radio, () => radioLabel(d), () => act({ a: 'radio', room: d.num }), 2);
   d.radioPos = new T.Vector3(wx(2.1), y + 0.9, wz(3.4));
   // window or painting on the back wall
-  if (!d.window) { lbox(1.0, 0.75, 0.04, M(0xa07a32), 1.5, 1.7, 4.63); plane(0.9, 0.65, M(0xffffff, { map: TX.painting }), 1.5, 1.7, 4.61, Math.PI, 0, g); }
+  if (!d.window) { lbox(1.0, 0.75, 0.04, M(0xa07a32), 1.5, 1.7, 4.63); plane(0.9, 0.65, M(0xffffff, { map: TX.paintings[d.num % TX.paintings.length] }), 1.5, 1.7, 4.61, Math.PI, 0, g); }
   // ceiling lamp + switch
   const bulb = lbox(0.3, 0.08, 0.3, B(0x221d18), 0, 3.12, 2.6); d.bulb = bulb;
   d.lightPos = new T.Vector3(wx(0), y + 2.6, wz(2.6));
