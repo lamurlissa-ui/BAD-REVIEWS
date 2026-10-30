@@ -129,7 +129,7 @@ function applyLobby3D(n0) {
   try {
     const fd = doors && doors.front;
     if (fd) {
-      const src = []; inst.traverse(o => { if (o.isMesh && o.material && ['wood_dark', 'brass', 'black'].includes(o.material.name)) src.push(o); });
+      const src = []; inst.traverse(o => { if (o.isMesh && o.material && ['wood_dark', 'brass'].includes(o.material.name)) src.push(o); });
       const LD = LOBBY3D.leafData = LOBBY3D.leafData || new Map();
       const PZ = 5.85, HX = [-1.0, 1.0], leaves = [new T.Group(), new T.Group()];
       src.forEach(o => {
@@ -139,7 +139,7 @@ function applyLobby3D(n0) {
           for (let t = 0; t < nT; t += 3) {
             const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, c = idx ? idx[t + 2] : t + 2;
             const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3, cy = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3, cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
-            if (Math.abs(cx) <= 1.0 && cy < 2.55 && cz > 5.75 && cz < 5.97) tris[cx < 0 ? 0 : 1].push(a, b, c); else keep.push(a, b, c);
+            if (Math.abs(cx) <= 1.0 && cy < 2.55 && ((o.material.name === 'wood_dark' && cz > 5.75 && cz < 5.97) || (o.material.name === 'brass' && cz > 5.4 && cz < 6.3 && cy > 0.7 && cy < 1.5))) tris[cx < 0 ? 0 : 1].push(a, b, c); else keep.push(a, b, c);
           }
           ent = { geos: [null, null] };
           [0, 1].forEach(li => {
@@ -157,6 +157,7 @@ function applyLobby3D(n0) {
       function ids0(a) { return a.length > 0; }
       leaves.forEach((g, li) => { g.position.set(HX[li], 0, PZ); src[0].parent.add(g); });
       const oldP = doors.front.pivot; if (oldP) oldP.visible = false;
+      const lm = []; leaves.forEach(g => g.traverse(o => { if (o.isMesh) lm.push(o); })); inter(lm, () => doorLabel(fd), () => doorInteract(fd), 2.8);
       const sgn = [1, -1];
       doors.front.pivot = { position: oldP.position, rotation: { set y(v) { leaves[0].rotation.y = sgn[0] * v; leaves[1].rotation.y = sgn[1] * v; }, get y() { return leaves[0].rotation.y; } }, visible: false };
     }
