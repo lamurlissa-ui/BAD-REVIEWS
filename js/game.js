@@ -254,6 +254,7 @@ function confirmNewCampaign(mode) {
   if (campaign && !confirm('Начать новую кампанию? Текущее сохранение будет заменено.')) return false;
   campaign = freshCampaign(mode); resumePending = false; writeCampaign(); return true;
 }
+$('#bTour').onclick = () => { startTour(); };
 $('#bSolo').onclick = () => { if (confirmNewCampaign('solo')) goCreator('solo'); };
 $('#bHost').onclick = () => {
   if (!Net.local && !netAvailable()) { menuMsg('Сетевая игра здесь недоступна. Открой игру на её сайте (GitHub Pages).'); return; }
@@ -385,6 +386,25 @@ function setupClientHandlers() {
 }
 
 /* ================= START ================= */
+function startTour() {
+  window.TOUR = true; aInit(); Net.mode = 'solo'; Net.id = 'solo'; campaign = null;
+  const cfg = { seed: 7, players: { solo: { id: 'solo', name: C.name, char: C, idx: 0 } }, night: 1 };
+  SEED = cfg.seed; NIGHT_LEN = 840; players = cfg.players; CURRENT_NIGHT = 1; currentRating = 1.2; currentReviews = 318; myIdx = 0;
+  G = freshG(); G.started = true; G.power = true; G.slammed = true; G.phase = 'tour'; Hs.poses = {}; gameTime = 0; timers = []; anims = [];
+  setupWorld(SEED); seedRng(SEED + 7); Hs.sched = []; Hs.calls = []; Hs.complaints = []; Hs.npcs = {}; Hs.mon = null;
+  show('#lobby', false); show('#menu', false); show('#morning', false); show('#pause', false);
+  W.lever.rotation.z = -0.6; doors.front.open = true; setDoorOpen(doors.front, true);
+  for (const k in doors) if (doors[k].locked) doors[k].locked = false;
+  startPlay(); P.x = -1; P.z = 3.5; P.feet = 0; yaw = 0; pitch = 0;
+  const bar = document.createElement('div'); bar.id = 'tourBar'; bar.style.cssText = 'position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:50;display:flex;gap:4px;flex-wrap:wrap;justify-content:center;max-width:94vw;font:12px sans-serif';
+  const mk = (t, f) => { const b = document.createElement('button'); b.textContent = t; b.style.cssText = 'padding:6px 9px;background:#000a;color:#fff;border:1px solid #fff4;border-radius:6px'; b.onclick = ev => { ev.stopPropagation(); f(); }; bar.appendChild(b); };
+  mk('Холл', () => { P.x = -1; P.z = 3.5; P.feet = 0; P.vy = 0; });
+  mk('Подвал', () => { P.x = -3; P.z = -10; P.feet = -3; P.vy = 0; });
+  mk('Лестница', () => { P.x = -5.2; P.z = -5.4; P.feet = 0; P.vy = 0; });
+  for (let L = 1; L <= 12; L++) mk('Эт.' + (L + 1), () => { P.x = -5; P.z = -1; P.feet = L * H; P.vy = 0; });
+  document.body.appendChild(bar);
+  if (isTouch) show('#touch', true);
+}
 function startGame(cfg) {
   SEED = cfg.seed; NIGHT_LEN = cfg.short ? 360 : 840; players = cfg.players;
   CURRENT_NIGHT = cfg.night || 1; currentRating = cfg.rating || 1.2; currentReviews = cfg.reviews || 318;
@@ -834,6 +854,7 @@ function spawnMonster() {
   dispatch({ e: 'door', id: 'basement', open: true }); dispatch({ e: 'monster', on: true });
 }
 function hostUpdate(dt) {
+  if (window.TOUR) { Hs.poses[Net.id] = myPose(); return; }
   const poses = Hs.poses; poses[Net.id] = myPose();
   for (const id in poses) if (!players[id]) delete poses[id];
   // first entry slams the front door
