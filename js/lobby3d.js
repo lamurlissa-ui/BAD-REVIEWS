@@ -12,7 +12,7 @@ LOBBY3D.promise = new Promise(res => {
   } catch (e) { console.warn(e); done(false); }
 });
 // the game renders in linear output; bake colours are authored in sRGB, so encode at the end of the shader
-function srgbOut(m) { const prev = m.onBeforeCompile; m.onBeforeCompile = sh => { if (prev) prev(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <encodings_fragment>', 'gl_FragColor = LinearTosRGB( gl_FragColor );'); }; m.customProgramCacheKey = () => 'srgbout'; return m; }
+function srgbOut(m) { const prev = m.onBeforeCompile; m.onBeforeCompile = sh => { if (prev) prev(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <encodings_fragment>', '{ vec3 x_ = gl_FragColor.rgb * 1.5; x_ = clamp((x_ * (2.51 * x_ + .03)) / (x_ * (2.43 * x_ + .59) + .14), 0., 1.); gl_FragColor.rgb = pow(x_, vec3(1. / 2.2)); }'); }; m.customProgramCacheKey = () => 'srgbout2'; return m; }
 function prep(root) {
   const dialC = document.createElement('canvas'); dialC.width = 128; dialC.height = 64; const dialT = new T.CanvasTexture(dialC); dialT.flipY = false;
   LOBBY3D.dial = { c: dialC, t: dialT };
@@ -57,32 +57,30 @@ function applyLobby3D(n0) {
   W.lm3d = true;
   const inst = root.clone(true); // fresh copy per world build
   // clone() shares materials – keep them shared on purpose (one set of lightmapped materials)
-  world.add(inst); LOBBY3D.inst = inst;
+  inst.position.y = 0.012; world.add(inst); LOBBY3D.inst = inst;
   const node = {}; inst.traverse(o => { if (o.isMesh) node[o.name.split('.')[0]] = o; });
   const box = (o) => new T.Box3().setFromObject(o);
   const ctr = (o) => box(o).getCenter(new T.Vector3());
   const P3 = (x, y, z) => new T.Vector3(x, y, z);
   // 2) proxies follow the new furniture positions
   const moveTo = (m, x, y, z) => m && m.position.set(x, y, z);
-  const bellC = node.bell ? ctr(node.bell) : P3(0.35, 1.2, -0.85);
+  const bellC = node.bell ? ctr(node.bell) : P3(0.6, 1.2, -1.75);
   const bg = W.bellDome && W.bellDome.parent; if (bg) bg.position.set(bellC.x, bellC.y - 0.06, bellC.z);
   W.bellPos = bellC.clone();
-  const ph = node.phoneHandset ? ctr(node.phoneHandset) : P3(0.95, 1.28, -1.05);
+  const ph = node.phoneHandset ? ctr(node.phoneHandset) : P3(0.55, 1.28, -1.95);
   const pg = W.handset && W.handset.parent; if (pg) pg.position.set(ph.x, ph.y - 0.17, ph.z);
   W.phonePos = ph.clone();
-  const nc = node.papers ? ctr(node.papers) : P3(-0.75, 0.83, -1.3); moveTo(W.px.note, nc.x, nc.y + 0.05, nc.z); W.px.note.rotation.set(-Math.PI / 2, 0, 0, 'YXZ'); W.px.note.scale.set(1.3, 1.3, 1.3);
-  const lc = node.ledger ? ctr(node.ledger) : P3(-0.15, 1.17, -1.17); moveTo(W.px.book, lc.x, lc.y, lc.z);
-  moveTo(W.px.mon, 1.85, 1.31, -1.02); W.px.mon.scale.set(1.1, 1, 1);
-  moveTo(W.px.kb, -0.25, 1.75, -3.88); W.px.kb.scale.set(1.05, 1.3, 1); // key board with all hooks
-  moveTo(W.px.plaque, -0.87, 1.35, -0.8); W.px.plaque.scale.set(0.45, 0.35, 1); W.px.plaque.rotation.y = Math.PI;
-  moveTo(W.px.rules, 1.4, 1.85, -3.87); W.px.rules.scale.set(0.62, 0.62, 1);
-  moveTo(W.px.portrait, -8.45, 1.9, 3.9); W.px.portrait.scale.set(1, 1, 1);
-  // master key on the shelf under the desk: invisible target near it; the visible parts are GLB nodes
+  const nc = node.papers ? ctr(node.papers) : P3(-0.5, 0.83, -2.2); moveTo(W.px.note, nc.x, nc.y + 0.05, nc.z); W.px.note.rotation.set(-Math.PI / 2, 0, 0, 'YXZ'); W.px.note.scale.set(1.3, 1.3, 1.3);
+  const lc = node.ledger ? ctr(node.ledger) : P3(0.1, 1.17, -2.07); moveTo(W.px.book, lc.x, lc.y, lc.z);
+  moveTo(W.px.mon, 1.3, 1.31, -2.0); W.px.mon.scale.set(1.1, 1, 1);
+  moveTo(W.px.kb, 0, 1.75, -3.88); W.px.kb.scale.set(1.05, 1.3, 1);
+  moveTo(W.px.plaque, -0.62, 1.35, -1.7); W.px.plaque.scale.set(0.45, 0.35, 1); W.px.plaque.rotation.y = Math.PI;
+  moveTo(W.px.rules, 1.65, 1.85, -3.87); W.px.rules.scale.set(0.62, 0.62, 1);
+  moveTo(W.px.portrait, -8.45, 1.9, 3.3); W.px.portrait.scale.set(1, 1, 1);
   const mkNodes = ['mkRing', 'mkShaft', 'mkBitA', 'mkBitB', 'mkCard', 'mkCardLegL'].map(n => node[n]).filter(Boolean);
-  const mkC = node.mkRing ? ctr(node.mkRing) : P3(0.55, 0.85, -1.28);
+  const mkC = node.mkRing ? ctr(node.mkRing) : P3(0.8, 0.85, -2.18);
   if (W.masterKey) { W.masterKey.position.set(mkC.x, mkC.y, mkC.z); W.masterKey.scale.set(2.2, 1.5, 6); }
   W.setMK = v => mkNodes.forEach(n => n.visible = v);
-  // 3) adapters for the animated bits (game code writes absolute values; GLB nodes sit at their real spots)
   const bell = node.bell, btn = node.bellBtn;
   if (bell) W.bellDome = { position: { get y() { return 0.015; }, set y(v) { bell.position.y = v - 0.015; if (btn) btn.position.y = v - 0.015; } } };
   const hs = node.phoneHandset;
@@ -90,27 +88,24 @@ function applyLobby3D(n0) {
   const dA = node.elevDoorA, dB = node.elevDoorB;
   if (dA && dB) {
     const cA = ctr(dA), cB = ctr(dB), dirA = cA.z < cB.z ? -1 : 1;
-    W.elevPos = cA.clone().add(cB).multiplyScalar(0.5); W.elevPos.x += 0.2; W.elevPos.y = 1.4;
+    W.elevPos = cA.clone().add(cB).multiplyScalar(0.5); W.elevPos.x += 0.3; W.elevPos.y = 1.4;
     W.elevDoors = [{ position: { set z(v) { dA.position.z = dirA * (2.87 - v); } } }, { position: { set z(v) { dB.position.z = -dirA * (v - 3.73); } } }];
-    W.px.elev.forEach((m, i) => m.position.set(W.elevPos.x - 0.1, 1.15, W.elevPos.z + (i ? 0.43 : -0.43)));
+    W.px.elev.forEach((m, i) => m.position.set(W.elevPos.x - 0.2, 1.15, W.elevPos.z + (i ? 0.43 : -0.43)));
   }
-  // 4) portrait swap
   let pm = null; inst.traverse(o => { if (o.isMesh && o.material.name === 'portrait') pm = o.material; });
   if (pm) {
     const mapA = pm.map; let mapB = null;
     W.portraitMat = { get map() { return pm.map === mapA ? TX.portraitA : TX.portraitB; }, set map(v) { if (v === TX.portraitB) { if (!mapB) { mapB = new T.CanvasTexture(TX.portraitB.image); mapB.flipY = false; mapB.encoding = T.sRGBEncoding; } pm.map = mapB; } else pm.map = mapA; } };
   }
-  // 5) furniture colliders for the new layout (columns, cart, floor lamp, armchair)
+  // furniture colliders: columns, luggage cart, floor lamp
   solid(-2.85, 1.35, -2.35, 1.85, 0, 3.2); solid(2.15, 1.35, 2.65, 1.85, 0, 3.2);
-  solid(-8.05, 4.35, -7.15, 5.25, 0, 1.0); solid(6.4, 0.75, 6.7, 1.05, 0, 1.6);
-  solid(3.1, 2.0, 4.05, 3.0, 0, 0.9);
-  // 6) sit on the sofa / armchair (E)
+  solid(-8.05, 4.35, -7.15, 5.25, 0, 1.0); solid(-7.4, 0.9, -7.0, 1.3, 0, 1.6);
+  // sit on the sofa (E): it stands against the north-west area facing the lobby
   const seat = (cx, cy, cz, sx, sy, sz, label, x, z, face) => {
     const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), new T.MeshBasicMaterial()); m.position.set(cx, cy, cz); m.visible = false; world.add(m);
     inter(m, () => SIT ? null : label, () => sitDown(x, z, face, 1.18), 2.4);
   };
-  seat(6.3, 0.55, 2.5, 1.1, 0.9, 2.3, 'Сесть на диван', 6.3, 2.5, Math.PI / 2);
-  seat(3.6, 0.55, 2.5, 0.95, 0.9, 0.95, 'Сесть в кресло', 3.6, 2.5, -Math.PI / 2);
+  seat(-5.6, 0.55, 1.3, 2.3, 0.9, 1.1, 'Сесть на диван', -5.6, 1.35, Math.PI);
   // 7) papers to read: guest ledger and the magazines
   if (node.ledger) inter(W.px.book, () => 'Книга гостей', () => toast('Последняя запись: «Спасибо за всё. Не уезжаю». Дата — через неделю от сегодняшней.', 5));
   const mg = (n, label, text) => { if (!node[n]) return; const c = ctr(node[n]); const m = new T.Mesh(new T.BoxGeometry(0.36, 0.1, 0.42), new T.MeshBasicMaterial()); m.position.copy(c); m.visible = false; world.add(m); inter(m, () => label, () => toast(text, 4.5), 2.4); };

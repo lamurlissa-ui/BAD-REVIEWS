@@ -1026,7 +1026,7 @@ function updateLights() {
   let pw = G.power ? 1 : 0;
   if (G.power && G.powerFlicker != null) { const t = gameTime - G.powerFlicker; const seq = [[0.3, 0], [0.42, 1], [0.6, 0], [0.66, 1], [1.05, 0]]; const st = seq.find(x => t < x[0]); pw = st ? st[1] : 1; }
   W.lobbyLights.forEach(L => L.intensity = (W.lm3d ? 0.2 : 0.95) * pw); if (W.lm3d) LOBBY3D.update(pw, 0.016); W.bulbs.forEach(b => b.material.color.setHex(pw ? 0xffe3a6 : 0x221d18));
-  W.corL.intensity = 0.55 * pw; W.corBulb.material.color.setHex(pw ? 0xd8ffe0 : 0x221d18);
+  W.corL.intensity = 0.55 * pw; if (W.connLights) { W.connLights.forEach(l => l.intensity = 0.55 * pw); W.connBulbs.forEach(b => b.material.color.setHex(pw ? 0xffe3a6 : 0x221d18)); } W.corBulb.material.color.setHex(pw ? 0xd8ffe0 : 0x221d18);
   W.stairLights.forEach((l, i) => l.intensity = 0.6 * pw * localMul.stair[i]);
   W.stairBulbs.forEach((b, i) => b.material.color.setHex(pw && i <= 2 && localMul.stair[i] > 0.5 ? 0xe8f0e0 : 0x221d18));
   for (const L of [1, 2]) { const on = pw && !G.corrDark[L] ? localMul.corr[L] : 0; W.corridorLights[L].forEach(l => l.intensity = 0.85 * on); W.corridorBulbs[L].forEach(b => b.material.color.setHex(on > 0.5 ? 0xffe9c0 : 0x221d18)); }
