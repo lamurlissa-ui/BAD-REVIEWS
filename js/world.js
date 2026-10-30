@@ -158,9 +158,9 @@ function buildLobby() {
   const __n0 = world.children.length;
   const wl = len => M(0xffffff, { map: repTex(TX.wallLobby, Math.max(1, len / 1.6), 2) });
   const wlMat = wl(10), plain = M(0x2a2420);
-  wallBox(7, -4, 7.2, 1.4, 0, 3.2, wlMat); wallBox(7, 2.6, 7.2, 5.85, 0, 3.2, wlMat); wallBox(7, 1.4, 7.2, 2.6, 2.4, 3.2, wlMat);
+  wallBox(7, -4, 7.2, 5.85, 0, 3.2, wlMat);
   wallBox(-8.7, -4.2, -8.5, -1.0, 0, 3.2, faces(wl(3), plain, plain, plain, plain));
-  wallBox(-8.5, -4.2, -5.5, -4, 0, 3.2, wl(3)); wallBox(-4.3, -4.2, 7, -4, 0, 3.2, wl(11)); wallBox(-5.5, -4.2, -4.3, -4, 2.4, 3.2, wl(1));
+  wallBox(-8.5, -4.2, -5.5, -4, 0, 3.2, wl(3)); wallBox(-4.3, -4.2, 4.9, -4, 0, 3.2, wl(9)); wallBox(6.1, -4.2, 7, -4, 0, 3.2, wl(1)); wallBox(-5.5, -4.2, -4.3, -4, 2.4, 3.2, wl(1)); wallBox(4.9, -4.2, 6.1, -4, 2.4, 3.2, wl(1));
   plane(7.7, 3.2, wl(7.7), -4.65, 1.6, 5.84, Math.PI); plane(6.2, 3.2, wl(6.2), 3.9, 1.6, 5.84, Math.PI); plane(1.6, 0.8, wl(1.6), 0, 2.8, 5.84, Math.PI);
   for (const x of [-4.6, 4.6]) plane(1.25, 1.1, M(0x0f1626, { shininess: 80, specular: 0x334466 }), x, 1.7, 5.83, Math.PI);
   plane(15.5, 9.85, M(0xffffff, { map: repTex(TX.carpet, 8, 5) }), -0.75, 0.02, 0.925, 0, -Math.PI / 2);
@@ -229,11 +229,11 @@ function buildLobby() {
 }
 function buildServiceWing() {
   // service door + corridor
-  makeDoor('service', { x: 7.1, y: 0, z: 1.4, w: 1.2, rot: -Math.PI / 2, kind: 'service', col: [7.04, 1.4, 7.16, 2.6], dir: -1, color: 0x4b4f4a });
+  makeDoor('service', { x: 4.9, y: 0, z: -4.1, w: 1.2, kind: 'service', col: [4.9, -4.16, 6.1, -4.04], dir: 1, color: 0x4b4f4a });
   makeDoor('st0', { x: -5.5, y: 0, z: -4.1, w: 1.2, rot: 0, kind: 'stair', col: [-5.5, -4.16, -4.3, -4.04], dir: 1, color: 0x4b4f4a });
   buildConnectors();
   const cw = M(0x5a5d55);
-  wallBox(4.2, -11.2, 4.4, -4.2, 0, 2.8, cw); wallBox(6.6, -11.2, 6.8, -7.7, 0, 2.8, cw); wallBox(6.6, -6.9, 6.8, -4.2, 0, 2.8, cw); wallBox(6.6, -7.7, 6.8, -6.9, 2.1, 2.8, cw); wallBox(4.4, -4.4, 6.6, -4.2, 0, 2.8, cw); wallBox(4.4, -11.2, 6.6, -11, 0, 2.8, cw);
+  wallBox(4.2, -11.2, 4.4, -4.2, 0, 2.8, cw); wallBox(6.6, -11.2, 6.8, -4.2, 0, 2.8, cw); wallBox(4.4, -11.2, 6.6, -11, 0, 2.8, cw);
   plane(2.2, 7, M(0x2a2b28), 5.5, 2.8, -7.6, 0, Math.PI / 2); plane(2.2, 7, M(0x2e2f2b), 5.5, 0.025, -7.6, 0, -Math.PI / 2);
   W.corBulb = new T.Mesh(sph(0.07), B(0x221d18)); W.corBulb.position.set(5.5, 2.7, -7.5); world.add(W.corBulb);
   W.corL = VPoint(0xc8ffd0, 0, 7, 1.5); W.corL.position.set(5.5, 2.55, -7.5); 
@@ -268,13 +268,6 @@ function buildConnectors() {
   wallBox(-8.5, -4.4, -5.5, -4.2, 0, 2.8, cw);         // service side of the lobby north wall
   W.connLights = [];
   for (const [x, z] of [[-7.5, -5.2], [-10.2, -3.0]]) { const L = VPoint(0xffcf8a, 0, 6, 1.5); L.position.set(x, 2.5, z); W.connLights.push(L); const b = new T.Mesh(sph(0.07), B(0x221d18)); b.position.set(x, 2.7, z); world.add(b); (W.connBulbs = W.connBulbs || []).push(b); }
-  // east: from the lobby door x=7.2 east, then north along x 6.8..8.6 and west into the wing
-  pass(7.2, -7.9, 8.6, 3.0); pass(6.8, -7.9, 7.2, -4.2);
-  wallBox(8.6, -8.1, 8.8, 3.2, 0, 2.8, cw);            // east wall
-  wallBox(6.8, -8.1, 8.8, -7.9, 0, 2.8, cw);           // north cap
-  wallBox(7.2, 3.0, 8.8, 3.2, 0, 2.8, cw);             // south cap
-  wallBox(6.8, -4.2, 7.2, -4.0, 0, 2.8, cw);           // inner corner
-  for (const [x, z] of [[7.9, -1.0], [7.9, -6.2]]) { const L = VPoint(0xc8ffd0, 0, 6, 1.5); L.position.set(x, 2.5, z); W.connLights.push(L); const b = new T.Mesh(sph(0.07), B(0x221d18)); b.position.set(x, 2.7, z); world.add(b); W.connBulbs.push(b); }
 }
 
 /* ---------- stairwell: 13 levels shown, 1–3 walkable ---------- */
@@ -287,7 +280,7 @@ function buildStairwell() {
   for (let L = 0; L < 13; L++) {
     const y0 = L * H, side = L === 0 ? lobbyMat : (L <= 2 ? corrMat : paint);
     const mats = faces(side, paint, paint, paint, paint);
-    if (L === 0) { const wm = wallBox(-8.7, -1.0, (typeof LOBBY3D !== 'undefined' && LOBBY3D.ready) ? -8.53 : -8.5, 5.85, y0, y0 + H, mats); wm.position.x = -8.6; if (typeof LOBBY3D !== 'undefined' && LOBBY3D.ready) { wm.scale.x = 0.17 / 0.2; wm.position.x = -8.615; } }
+    if (L === 0) { const wm = wallBox(-8.7, -1.0, (typeof LOBBY3D !== 'undefined' && LOBBY3D.ready) ? -8.53 : -8.5, 5.85, y0, y0 + H, mats); wm.position.x = -8.6; if (typeof LOBBY3D !== 'undefined' && LOBBY3D.ready) { wm.scale.x = 0.17 / 0.2; wm.position.x = -8.615; wm.scale.z = 5.95 / 6.85; wm.position.z = 2.875; } }
     else { wallBox(-8.7, -1.0, -8.5, -0.6, y0, y0 + H, mats); wallBox(-8.7, 0.6, -8.5, 5.85, y0, y0 + H, mats); wallBox(-8.7, -0.6, -8.5, 0.6, y0 + 2.4, y0 + H, mats); }
     if (L === 0) { /* lobby-level stair door lives in the lobby north wall */ } else if (L <= 2) W.stairDoors.push(makeDoor('st' + L, { x: -8.6, y: y0, z: -0.6, w: 1.2, rot: -Math.PI / 2, dir: 1, kind: 'stair', col: [-8.66, -0.6, -8.54, 0.6], color: 0x4b4f4a }));
     else { const dm = box(0.07, 2.3, 1.2, M(0x3a3e3a), -8.6, y0 + 1.15, 0); rayTargets.push(dm); solid(-8.66, -0.6, -8.54, 0.6, y0, y0 + 2.4); inter(dm, () => 'Дверь на этаж', () => toast('Заколочено. С той стороны играет музыка. Медленно.', 3.5)); for (const a of [-0.3, 0.3]) { const plank = box(0.05, 0.14, 1.5, M(0x6a4a2a), -8.5, y0 + 1.2 + a, 0); plank.rotation.x = a; } }
@@ -303,11 +296,11 @@ function buildStairwell() {
   for (let L = 0; L < 13; L++) {
     const y = L * H;
     for (let i = 0; i < 10; i++) {
-      put(ec, y + (i + 1) * 0.17 - 0.2, 1.6 + (i + 0.5) * 0.28, ew, 0.4, 0.28);
+      put(ec - 0.015, y + (i + 1) * 0.17 - 0.2, 1.6 + (i + 0.5) * 0.28, ew - 0.03, 0.4, 0.28);
       put(wc, y + 1.7 + (i + 1) * 0.17 - 0.2, 4.4 - (i + 0.5) * 0.28, ww, 0.4, 0.28);
     }
-    put(-10.175, y + 1.7 - 0.1, 5.125, 3.35, 0.2, 1.45); // mid landing
-    if (L > 0) put(-10.175, y - 0.1, 0.3, 3.35, 0.2, 2.6); // floor landing
+    put(-10.19, y + 1.7 - 0.1, 5.125, 3.32, 0.2, 1.45); // mid landing
+    if (L > 0) put(-10.19, y - 0.1, 0.3, 3.32, 0.2, 2.6); // floor landing
   }
   steps.count = k; world.add(steps);
   // rails + posts (instanced)
@@ -536,8 +529,8 @@ const WPN = {};
 function N(id, x, y, z) { WPN[id] = { id, p: new T.Vector3(x, y, z), n: [] }; }
 function E(a, b) { WPN[a].n.push(b); WPN[b].n.push(a); }
 function buildWaypoints() {
-  N('lb_st', -4.9, 0, -3.0); N('cn1', -4.9, 0, -5.2); N('cn2', -10.2, 0, -5.2); N('cn3', -10.2, 0, -2.0); N('lb_a', -4, 0, 0.2); N('lb_b', 0, 0, 0.5); N('lb_c', 4, 0, 0.3); N('lb_door', 0, 0, 4.6); N('lb_srv', 6.3, 0, 2.0); N('e1', 7.9, 0, 2.0); N('e2', 7.9, 0, -7.3); N('e3', 5.7, 0, -7.3); N('sv1', 5.5, 0, -6.5); N('sv2', 5.5, 0, -10);
-  E('lb_st', 'lb_a'); E('lb_a', 'lb_b'); E('lb_b', 'lb_c'); E('lb_b', 'lb_door'); E('lb_c', 'lb_srv'); E('lb_srv', 'e1'); E('e1', 'e2'); E('e2', 'e3'); E('e3', 'sv1'); E('sv1', 'sv2'); E('lb_st', 'cn1'); E('cn1', 'cn2'); E('cn2', 'cn3');
+  N('lb_st', -4.9, 0, -3.0); N('cn1', -4.9, 0, -5.2); N('cn2', -10.2, 0, -5.2); N('cn3', -10.2, 0, -2.0); N('lb_a', -4, 0, 0.2); N('lb_b', 0, 0, 0.5); N('lb_c', 4, 0, 0.3); N('lb_door', 0, 0, 4.6); N('lb_srv', 5.5, 0, -3.0); N('sv1', 5.5, 0, -6.5); N('sv2', 5.5, 0, -10);
+  E('lb_st', 'lb_a'); E('lb_a', 'lb_b'); E('lb_b', 'lb_c'); E('lb_b', 'lb_door'); E('lb_c', 'lb_srv'); E('lb_srv', 'sv1'); E('sv1', 'sv2'); E('lb_st', 'cn1'); E('cn1', 'cn2'); E('cn2', 'cn3');
   N('bs', -11.15, 0, 1.2);
   for (let L = 0; L <= 2; L++) {
     const y = L * H; N('ld' + L, -9.3, y, 0.2);

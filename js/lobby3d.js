@@ -1,6 +1,6 @@
 /* ===== baked lobby (Blender → GLB + lightmap). Falls back to the old procedural lobby if anything fails. ===== */
 'use strict';
-const LOBBY3D = { ready: false, root: null, LM: 1 / 0.42, mats: [], emis: [], dial: null };
+const LOBBY3D = { ready: false, root: null, LM: 1 / 0.42, mats: [], emis: [], basics: [], dial: null };
 LOBBY3D.promise = new Promise(res => {
   if (!T.GLTFLoader || /[?&]oldlobby/.test(location.search)) { res(false); return; }
   const done = ok => res(ok);
@@ -18,12 +18,12 @@ function prep(root) {
   LOBBY3D.dial = { c: dialC, t: dialT };
   root.traverse(o => {
     if (!o.isMesh) return;
-    const base = o.name.split('.')[0], m = o.material, mn = m.name || '';
+    const base = o.name.replace(/\.?00\d$/, ''), m = o.material, mn = m.name || '';
     o.frustumCulled = false;
     if (mn === 'mirror') { m.color.setHex(0x232b2d); m.roughness = 0.15; m.metalness = 0; }
     if (mn === 'elevdial') { const bm = srgbOut(new T.MeshBasicMaterial({ map: dialT })); o.material = bm; return; }
     if (mn.indexOf('night') === 0) { m.transparent = true; m.opacity = 0.0; m.depthWrite = false; o.visible = false; return; } // game draws its own street
-    if (['elevDoorA', 'elevDoorB', 'elevSign'].includes(base)) { const mm = m.clone(); mm.emissive = mm.color.clone().multiplyScalar(base === 'elevSign' ? 0.12 : 0.28); mm.emissiveMap = mm.map || null; mm.roughness = 0.8; mm.metalness = 0.1; o.material = srgbOut(mm); LOBBY3D.emis.push({ m: mm, e: mm.emissive.clone() }); return; }
+    if (['elevDoorA', 'elevDoorB', 'elevSign'].includes(base)) { if (!m.userData.bas) { const bm = srgbOut(new T.MeshBasicMaterial({ map: m.map || null, color: m.color.clone().multiplyScalar(base === 'elevSign' ? 0.5 : 0.62) })); m.userData.bas = bm; LOBBY3D.basics.push({ m: bm, c: bm.color.clone() }); } o.material = m.userData.bas; return; }
     // cheap per-vertex lighting (the baked lightmap does the real work): far lighter than MeshStandardMaterial on phones
     if (!m.userData.lam) { const lm = new T.MeshLambertMaterial({ name: m.name, color: m.color.clone(), map: m.map || null, emissive: m.emissive ? m.emissive.clone() : new T.Color(0), emissiveMap: m.emissiveMap || null, side: m.side, transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest }); if (m.map) m.map.anisotropy = 2; m.userData.lam = lm; }
     o.material = m.userData.lam; const m0 = m; const m1 = o.material;
@@ -54,6 +54,7 @@ LOBBY3D.update = function (pw, dt) {
   if (!LOBBY3D.ready) return;
   for (const m of LOBBY3D.mats) m.lightMapIntensity = LOBBY3D.LM * pw;
   for (const e of LOBBY3D.emis) { if (e.e) { e.m.emissive.copy(e.e).multiplyScalar(pw); } else if (!e.keep) e.m.emissiveIntensity = e.base * pw; }
+  for (const b of LOBBY3D.basics) b.m.color.copy(b.c).multiplyScalar(0.1 + 0.9 * pw);
   _dialT -= dt || 0.016;
   if (_dialT <= 0) { _dialT = 0.25 + Math.random() * 0.9; if (pw > 0.5) { const r = Math.random(); drawDial(r < 0.12 ? '13' : r < 0.2 ? '--' : r < 0.3 ? '*' : String(1 + Math.floor(Math.random() * 12)), true); } else drawDial('', false); }
 };
@@ -67,7 +68,7 @@ function applyLobby3D(n0) {
   const inst = root.clone(true); // fresh copy per world build
   // clone() shares materials – keep them shared on purpose (one set of lightmapped materials)
   inst.position.y = 0.012; world.add(inst); LOBBY3D.inst = inst;
-  const node = {}; inst.traverse(o => { if (o.isMesh) node[o.name.split('.')[0]] = o; });
+  const node = {}; inst.traverse(o => { if (o.isMesh) node[o.name.replace(/\.?00\d$/, '')] = o; });
   const box = (o) => new T.Box3().setFromObject(o);
   const ctr = (o) => box(o).getCenter(new T.Vector3());
   const P3 = (x, y, z) => new T.Vector3(x, y, z);
@@ -85,7 +86,7 @@ function applyLobby3D(n0) {
   moveTo(W.px.kb, 0, 1.75, -3.88); W.px.kb.scale.set(1.05, 1.3, 1);
   moveTo(W.px.plaque, -0.62, 1.35, -1.7); W.px.plaque.scale.set(0.45, 0.35, 1); W.px.plaque.rotation.y = Math.PI;
   moveTo(W.px.rules, 1.65, 1.85, -3.87); W.px.rules.scale.set(0.62, 0.62, 1);
-  moveTo(W.px.portrait, -8.45, 1.9, 3.3); W.px.portrait.scale.set(1, 1, 1);
+  moveTo(W.px.portrait, -2.9, 1.9, -3.87); W.px.portrait.scale.set(1, 1, 1); W.px.portrait.rotation.set(0, 0, 0);
   const mkNodes = ['mkRing', 'mkShaft', 'mkBitA', 'mkBitB', 'mkCard', 'mkCardLegL'].map(n => node[n]).filter(Boolean);
   const mkC = node.mkRing ? ctr(node.mkRing) : P3(0.8, 0.85, -2.18);
   if (W.masterKey) { W.masterKey.position.set(mkC.x, mkC.y, mkC.z); W.masterKey.scale.set(2.2, 1.5, 6); }
