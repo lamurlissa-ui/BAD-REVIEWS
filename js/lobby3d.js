@@ -24,14 +24,23 @@ function prep(root) {
     if (mn === 'elevdial') { const bm = srgbOut(new T.MeshBasicMaterial({ map: dialT })); o.material = bm; return; }
     if (mn.indexOf('night') === 0) { m.transparent = true; m.opacity = 0.0; m.depthWrite = false; o.visible = false; return; } // game draws its own street
     if (['elevDoorA', 'elevDoorB', 'elevSign'].includes(base)) { const mm = m.clone(); mm.emissive = mm.color.clone().multiplyScalar(base === 'elevSign' ? 0.12 : 0.28); mm.emissiveMap = mm.map || null; mm.roughness = 0.8; mm.metalness = 0.1; o.material = srgbOut(mm); LOBBY3D.emis.push({ m: mm, e: mm.emissive.clone() }); return; }
-    const em = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.01;
-    m.lightMap = LOBBY3D.lm; m.lightMapIntensity = LOBBY3D.LM; m.envMapIntensity = 0;
-    if (['elevator_sign', 'service_sign', 'rules', 'plaque', 'keys', 'clock'].includes(mn) && m.color) m.color.multiplyScalar(mn === 'elevator_sign' ? 0.32 : 0.6);
-    if (mn === 'metal' || mn === 'brass') { m.roughness = 0.85; m.metalness = 0.12; }
-    if (em) { m.emissiveIntensity = mn === 'bulb' ? 3.5 : mn === 'shade' ? 1.3 : mn === 'exit' ? 0.12 : mn === 'screen' ? 1.5 : mn === 'clock' ? 2 : mn === 'neon' ? 4 : 1; m.userData.e = m.emissiveIntensity; LOBBY3D.emis.push({ m, e: null, base: m.emissiveIntensity, keep: mn === 'exit' || mn === 'neon' }); }
-    srgbOut(m); LOBBY3D.mats.push(m);
+    // cheap per-vertex lighting (the baked lightmap does the real work): far lighter than MeshStandardMaterial on phones
+    if (!m.userData.lam) { const lm = new T.MeshLambertMaterial({ name: m.name, color: m.color.clone(), map: m.map || null, emissive: m.emissive ? m.emissive.clone() : new T.Color(0), emissiveMap: m.emissiveMap || null, side: m.side, transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest }); if (m.map) m.map.anisotropy = 2; m.userData.lam = lm; }
+    o.material = m.userData.lam; const m0 = m; const m1 = o.material;
+    return finish(o, m1, mn);
   });
   drawDial('--', true);
+}
+function finish(o, m, mn) {
+  if (m.userData.reg) return; m.userData.reg = 1;
+  {
+    const em = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.01;
+    m.lightMap = LOBBY3D.lm; m.lightMapIntensity = LOBBY3D.LM;
+    if (['elevator_sign', 'service_sign', 'rules', 'plaque', 'keys', 'clock'].includes(mn) && m.color) m.color.multiplyScalar(mn === 'elevator_sign' ? 0.32 : 0.6);
+    
+    if (em) { m.emissiveIntensity = mn === 'bulb' ? 3.5 : mn === 'shade' ? 1.3 : mn === 'exit' ? 0.12 : mn === 'screen' ? 1.5 : mn === 'clock' ? 2 : mn === 'neon' ? 4 : 1; m.userData.e = m.emissiveIntensity; LOBBY3D.emis.push({ m, e: null, base: m.emissiveIntensity, keep: mn === 'exit' || mn === 'neon' }); }
+    srgbOut(m); LOBBY3D.mats.push(m);
+  }
 }
 function drawDial(txt, glitch) {
   const d = LOBBY3D.dial; if (!d) return; const g = d.c.getContext('2d'); g.fillStyle = '#0a0606'; g.fillRect(0, 0, 128, 64);
