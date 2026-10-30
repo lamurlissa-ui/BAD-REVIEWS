@@ -113,7 +113,7 @@ function applyLobby3D(n0) {
   // sit on the sofa (E): it stands against the north-west area facing the lobby
   const seat = (cx, cy, cz, sx, sy, sz, label, x, z, face) => {
     const m = new T.Mesh(new T.BoxGeometry(sx, sy, sz), new T.MeshBasicMaterial()); m.position.set(cx, cy, cz); m.visible = false; world.add(m);
-    inter(m, () => SIT ? null : label, () => sitDown(x, z, face, 1.18), 2.4);
+    inter(m, () => window.isSitting && window.isSitting() ? null : label, () => sitDown(x, z, face, 1.18), 2.4);
   };
   seat(-5.6, 0.55, 1.3, 2.3, 0.9, 1.1, 'Сесть на диван', -5.6, 1.35, Math.PI);
   // 7) papers to read: guest ledger and the magazines

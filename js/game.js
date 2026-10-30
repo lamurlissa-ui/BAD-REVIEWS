@@ -1161,6 +1161,7 @@ window.deskInteract = () => act({ a: 'desk' });
 window.phoneLabel = () => G.phone === 'ring' ? 'Снять трубку' : 'Телефон';
 window.masterKeyLabel = () => G.mkey == null ? 'Взять мастер-ключ' : G.mkey === Net.id ? 'Повесить мастер-ключ' : 'Доска с ключами';
 window.fuseLabel = () => !G.power ? 'Включить свет' : G.corrDark[1] ? 'Включить автомат 2-го этажа' : G.corrDark[2] ? 'Включить автомат 3-го этажа' : 'Электрощиток';
+window.isSitting = () => !!SIT;
 window.sitDown = (x, z, face, eye, label) => {
   if (SIT) return; SIT = { eye: eye || 1.15, x: P.x, z: P.z, face }; P.x = x; P.z = z; yaw = face; pitch = 0; toast(label || 'Ты сел. Любая клавиша движения — встать.', 2.2);
 };
