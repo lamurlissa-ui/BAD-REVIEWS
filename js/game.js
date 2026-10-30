@@ -87,7 +87,7 @@ let G = null; const Hs = {}; // G = shared state (same on every client), Hs = ho
 let players = {}; // id -> {id,name,char,idx}
 const avatars = {}, npcs = {};
 const P = { x: 0, z: 0, feet: 0, vy: 0 };
-let SIT = null;
+let SIT = null, spaceWas = false;
 let yaw = 0, pitch = 0, crouch = false, flashOn = true, item = null, locked = false, myIdx = 0;
 let gameTime = 0, timers = [], anims = [];
 function later(s, fn) { timers.push({ t: gameTime + s, fn }); }
@@ -573,6 +573,7 @@ function updatePlayer(dt) {
     ix += stick.x; iy += stick.y;
   }
   const len = Math.hypot(ix, iy); if (len > 1) { ix /= len; iy /= len; }
+  const wasSit = !!SIT;
   if (SIT) { if (len > 0.3 || keys.Space) { standUp(); } else { ix = iy = 0; } }
   const crouching = crouch || keys.ControlLeft;
   const moving = len > 0.08, run = (keys.ShiftLeft || keys.ShiftRight) && !crouching;
@@ -582,7 +583,10 @@ function updatePlayer(dt) {
   P.z += (-cy * iy - sy * ix) * sp * dt; resolveCollisions(P, 0.28, P.feet);
   }
   const gnd = groundAt(P.x, P.z, P.feet);
-  if (P.feet - gnd > 0.6) { P.vy -= 18 * dt; P.feet = Math.max(gnd, P.feet + P.vy * dt); if (P.feet === gnd) { P.vy = 0; sfx.step('hard'); } }
+  let air = P.vy !== 0 || P.feet - gnd > 0.6;
+  if (keys.Space && !spaceWas && !wasSit && !air && !crouching && !G.frozen && !uiOpen) { P.vy = 4.4; air = true; sfx.step('soft'); }
+  spaceWas = !!keys.Space;
+  if (air) { P.vy -= 18 * dt; P.feet += P.vy * dt; if (P.feet <= gnd && P.vy <= 0) { P.feet = gnd; P.vy = 0; sfx.step('hard'); } }
   else { P.feet = gnd; P.vy = 0; }
   noiseLevel = moving ? (crouching ? 0 : run ? 2 : 1) : 0;
   const rm = roomAt(P.x, P.feet, P.z);
@@ -666,6 +670,7 @@ function hostAct(pid, a) {
     }
     case 'wait': { const g = G.guests[a.gid]; if (!g) return; dispatch({ e: 'guestState', id: g.id, state: 'toSofa', by: pid }); dispatch({ e: 'desk', by: null }); npcGo(g.id, [V3(3.5, 0, 1.5), V3(5.7, 0, 2.5)], () => dispatch({ e: 'guestState', id: g.id, state: 'sofa' })); return; }
     case 'refuse': { const g = G.guests[a.gid]; if (!g) return; dispatch({ e: 'guestState', id: g.id, state: 'leaving', by: pid }); dispatch({ e: 'desk', by: null }); npcGo(g.id, [V3(0, 0, 4.4), V3(0, 0, 7.6), V3(-6, 0, 18), V3(-11.6, 0, 25.6)], () => dispatch({ e: 'guestState', id: g.id, state: 'outside' })); return; }
+    case 'curtain': { const c = W.curt[a.key]; if (c) dispatch({ e: 'curtain', key: a.key, closed: !c.closed }); return; }
     case 'roomlight': { const r = rooms.find(x => x.num === a.room); if (r) dispatch({ e: 'roomLight', room: r.num, on: !r.light }); return; }
     case 'radio': { const r = rooms.find(x => x.num === a.room); if (!r) return; if (r.radio) { dispatch({ e: 'radio', room: r.num, on: false }); completeTasks(t => t.kind === 'noise' && t.room === r.num, pid); } else dispatch({ e: 'toast', to: pid, text: 'Старое радио. Выключено. Ручка тёплая.' }); return; }
     case 'deliver': { const ok = completeTasks(t => t.kind === 'towels' && t.room === a.room, pid); if (!ok) dispatch({ e: 'toast', to: pid, text: 'Полотенца тут никто не заказывал.' }); return; }
@@ -698,6 +703,7 @@ function applyEv(ev) {
     case 'bell': sfx.bell(W.bellPos || V3(-1.25, 1.2, -0.78)); anim(0.35, k => W.bellDome.position.y = 0.015 - Math.sin(k * Math.PI) * 0.01); return;
     case 'phone': {
       G.phone = ev.state; clearInterval(ringLoop);
+      if (W.aonShow) { if (ev.state === 'ring') W.aonShow(ev.num || '---'); else if (ev.state === 'idle') W.aonShow(''); }
       if (ev.state === 'ring') { const r = () => { sfx.ring(W.phonePos); anim(1.2, k => W.handset.position.y = 0.11 + (Math.sin(k * 60) > 0 ? 0.008 : 0) * (1 - k)); }; r(); ringLoop = setInterval(r, 3000); }
       if (ev.state === 'talk') anim(0.3, k => { W.handset.position.y = 0.11 + k * 0.25; W.handset.rotation.z = k * 0.6; });
       if (ev.state === 'idle') anim(0.3, k => { W.handset.position.y = 0.36 - k * 0.25; W.handset.rotation.z = 0.6 * (1 - k); });
@@ -727,6 +733,7 @@ function applyEv(ev) {
       if (t.failed && (!old || !old.failed)) { sfx.bad(); pulseVig(); toast(`Заявка провалена: ${t.short}`, 3.5); }
       return;
     }
+    case 'curtain': { setCurtain(ev.key, ev.closed); sfx.paper(); return; }
     case 'roomLight': { const r = rooms.find(x => x.num === ev.room); if (r) { r.light = ev.on; r.bulb.material.color.setHex(ev.on ? 0xffe3a6 : 0x221d18); sfx.tick(); } return; }
     case 'radio': { const r = rooms.find(x => x.num === ev.room); if (!r) return; r.radio = ev.on; if (ev.on && !radios[r.num]) radios[r.num] = loopSound('radio', r.radioPos); if (!ev.on && radios[r.num]) { radios[r.num].stop(); delete radios[r.num]; sfx.clunk(r.radioPos); } return; }
     case 'unlock': { const r = rooms.find(x => x.num === ev.room); if (r) r.unlocked = true; return; }
@@ -788,10 +795,11 @@ const MANAGER_BRIEF = [
   ['УПРАВЛЯЮЩИЙ', 'И не шумите на лестнице. Его это злит. Утром — отзывы.', 1.5],
   ['', '…короткие гудки.', 1.0],
 ];
+const callNum = c => !c ? '---' : c.kind === 'brief' ? 'УПР' : (G.tasks[c.id] && G.tasks[c.id].room) ? String(G.tasks[c.id].room) : '---';
 function powerOn() {
   dispatch({ e: 'power' });
   later(3.5, () => dispatch({ e: 'bell' }));
-  later(6, () => { Hs.calls.push({ kind: 'brief' }); if (G.phone === 'idle') dispatch({ e: 'phone', state: 'ring' }); });
+  later(6, () => { Hs.calls.push({ kind: 'brief' }); if (G.phone === 'idle') dispatch({ e: 'phone', state: 'ring', num: callNum(Hs.calls[0]) }); });
 }
 function answerPhone(pid) {
   const call = Hs.calls.shift(); if (!call) { dispatch({ e: 'phone', state: 'idle' }); return; }
@@ -804,7 +812,7 @@ function answerPhone(pid) {
   later(dur + 0.3, () => {
     dispatch({ e: 'phone', state: 'idle' });
     if (call.kind === 'brief' && !G.clockOn) dispatch({ e: 'clock' });
-    if (Hs.calls.length) later(2, () => { if (G.phone === 'idle') dispatch({ e: 'phone', state: 'ring' }); });
+    if (Hs.calls.length) later(2, () => { if (G.phone === 'idle') dispatch({ e: 'phone', state: 'ring', num: callNum(Hs.calls[0]) }); });
   });
 }
 function spawnGuest(type, i) {
@@ -840,7 +848,7 @@ function createTask(kind) {
   }
   const t = { id: 't' + (Hs.taskN++), kind, room: r.num, level: r.level, who, line, short, revealed: false, done: false, failed: false, deadline: 0 };
   dispatch({ e: 'task', t });
-  Hs.calls.push({ kind: 'task', id: t.id }); if (G.phone === 'idle') dispatch({ e: 'phone', state: 'ring' });
+  Hs.calls.push({ kind: 'task', id: t.id }); if (G.phone === 'idle') dispatch({ e: 'phone', state: 'ring', num: callNum(Hs.calls[0]) });
 }
 function complaint(gid) {
   const g = G.guests[gid]; if (!g || g.state !== 'inRoom') return; const def = GTYPES[g.type]; const r = rooms.find(x => x.num === g.room);
@@ -855,10 +863,20 @@ function spawnMonster() {
   Hs.mon = { x: BLD.spawn.x, y: BLD.spawn.y, z: BLD.spawn.z, yaw: 0, mode: 'roam', path: [], goal: null, lastHeard: -99, cool: 4, catchCool: 0 };
   dispatch({ e: 'door', id: 'basement', open: true }); dispatch({ e: 'monster', on: true });
 }
+function autoCloseDoors(dt) {
+  for (const id in doors) {
+    const d = doors[id]; if (d.kind !== 'stair' || !d.open) { d.openT = 0; continue; }
+    const px = d.pivot.position.x + Math.cos(d.base) * d.w / 2, pz = d.pivot.position.z - Math.sin(d.base) * d.w / 2;
+    const near = Object.values(Hs.poses).some(p => Math.hypot(p[0] - px, p[2] - pz) < 1.6 && Math.abs(p[1] - d.pivot.position.y) < 2);
+    d.openT = near ? 0 : (d.openT || 0) + dt;
+    if (d.openT > 2.5) { d.openT = 0; dispatch({ e: 'door', id, open: false }); }
+  }
+}
 function hostUpdate(dt) {
-  if (window.TOUR) { Hs.poses[Net.id] = myPose(); return; }
+  if (window.TOUR) { Hs.poses[Net.id] = myPose(); autoCloseDoors(dt); return; }
   const poses = Hs.poses; poses[Net.id] = myPose();
   for (const id in poses) if (!players[id]) delete poses[id];
+  autoCloseDoors(dt);
   // first entry slams the front door
   if (!G.slammed && !Hs.slamAt) for (const id in poses) { const p = poses[id]; if (p[2] < 4.4 && Math.abs(p[0]) < 7 && p[1] < 1) { Hs.slamAt = gameTime + 0.6; break; } }
   if (Hs.slamAt && gameTime > Hs.slamAt && !G.slammed) { Hs.slamAt = 0; dispatch({ e: 'slam' }); }
@@ -1041,7 +1059,7 @@ const tmpV = new T.Vector3();
 function updateZones() {
   const cp = cam.position, inside = insideBuilding(cp.x, cp.z), inSt = inStairwell(cp.x, cp.z);
   W.extG.visible = !inside;
-  for (const L of [1, 2]) { const fg = W.floorG[L]; fg.visible = inside && (Math.abs(cp.y - (L * H + 1.6)) < 4.2 || inSt); }
+  for (const L of Object.keys(W.floorG).map(Number)) { const fg = W.floorG[L]; fg.visible = inside && (Math.abs(cp.y - (L * H + 1.6)) < 4.2 || inSt); }
   for (const r of rooms) r.group.visible = W.floorG[r.level].visible && r.center.distanceTo(cp) < 14;
 }
 function updateLights() {
@@ -1050,9 +1068,9 @@ function updateLights() {
   if (G.power && G.powerFlicker != null) { const t = gameTime - G.powerFlicker; const seq = [[0.3, 0], [0.42, 1], [0.6, 0], [0.66, 1], [1.05, 0]]; const st = seq.find(x => t < x[0]); pw = st ? st[1] : 1; }
   W.lobbyLights.forEach(L => L.intensity = (W.lm3d ? 0.2 : 0.95) * pw); if (W.lm3d) LOBBY3D.update(pw, 0.016); W.bulbs.forEach(b => b.material.color.setHex(pw ? 0xffe3a6 : 0x221d18));
   W.corL.intensity = 0.55 * pw; if (W.connLights) { W.connLights.forEach(l => l.intensity = 0.55 * pw); W.connBulbs.forEach(b => b.material.color.setHex(pw ? 0xffe3a6 : 0x221d18)); } W.corBulb.material.color.setHex(pw ? 0xd8ffe0 : 0x221d18);
-  W.stairLights.forEach((l, i) => l.intensity = 0.6 * pw * localMul.stair[i]); if (W.basLight) W.basLight.intensity = 0.35 * pw;
-  W.stairBulbs.forEach((b, i) => b.material.color.setHex(pw && i <= 2 && localMul.stair[i] > 0.5 ? 0xe8f0e0 : 0x221d18));
-  for (const L of [1, 2]) { const on = pw && !G.corrDark[L] ? localMul.corr[L] : 0; W.corridorLights[L].forEach(l => l.intensity = 0.85 * on); W.corridorBulbs[L].forEach(b => b.material.color.setHex(on > 0.5 ? 0xffe9c0 : 0x221d18)); }
+  W.stairLights.forEach((l, i) => l.intensity = 0.6 * pw * (localMul.stair[i >> 1] ?? 1)); if (W.basLight) W.basLight.intensity = 0.35 * pw;
+  W.stairBulbs.forEach((b, i) => b.material.color.setHex(pw && (localMul.stair[i >> 1] ?? 1) > 0.5 ? 0xe8f0e0 : 0x221d18));
+  for (const L of Object.keys(W.corridorLights).map(Number)) { const on = pw && !G.corrDark[L] ? (localMul.corr[L] ?? 1) : 0; W.corridorLights[L].forEach(l => l.intensity = 0.85 * on); W.corridorBulbs[L].forEach(b => b.material.color.setHex(on > 0.5 ? 0xffe9c0 : 0x221d18)); }
   hemi.intensity = !insideBuilding(cam.position.x, cam.position.z) ? 0.55 : pw ? 0.13 : 0.035;
   moon.intensity = insideBuilding(cam.position.x, cam.position.z) ? 0 : 0.3;
   const inside = insideBuilding(cam.position.x, cam.position.z);
@@ -1267,7 +1285,7 @@ function updateHUD(dt) {
 let menuT = 0, poseSendT = 0;
 function updateMenu(dt) { assignPool(); if (W.extG) { W.extG.visible = true; W.floorG[1].visible = W.floorG[2].visible = false; } menuT += dt; const a = Math.sin(menuT * 0.06) * 0.75; cam.position.set(Math.sin(a) * 30, 5.5 + Math.sin(menuT * 0.2) * 0.3, 9 + Math.cos(a) * 30); cam.lookAt(0, 9, 0); updateFlicker(dt); }
 function updatePlay(dt) {
-  gameTime += dt; checkpointT += dt; runTimers(); runAnims(dt); updateDoors(dt); updateFlicker(dt);
+  gameTime += dt; checkpointT += dt; runTimers(); runAnims(dt); updateDoors(dt); updateCurtains(dt); updateFlicker(dt);
   updatePlayer(dt);
   if (Net.isHost) hostUpdate(dt);
   else { poseSendT += dt; if (poseSendT > 1 / 12) { poseSendT = 0; Net.toHost('pos', myPose()); } }
@@ -1350,5 +1368,5 @@ setupWorld(1);
 refreshMenuSave(); show('#loading', false); show('#menu', true); S = 'menu';
 requestAnimationFrame(loop);
 });
-window.__br = { spawnMon: () => spawnMonster(), sim(sec) { const n = Math.round(sec / 0.05); for (let i = 0; i < n; i++) { if (S === "play") updatePlay(0.05); else if (S === "drive") updateDrive(0.05); } }, get S() { return S; }, info: () => renderer.info.render, scene: () => world, G: () => G, P, rooms, act, Net, players: () => players, get uiOpen() { return uiOpen; }, set yaw(v) { yaw = v; }, set pitch(v) { pitch = v; }, keys, teleport(x, y, z) { P.x = x; P.feet = y; P.z = z; }, hs: Hs, guests: () => G.guests };
+window.__br = { phone: (s, n) => dispatch({ e: 'phone', state: s, num: n }), curtain: (k, c) => dispatch({ e: 'curtain', key: k, closed: c }), spawnMon: () => spawnMonster(), sim(sec) { const n = Math.round(sec / 0.05); for (let i = 0; i < n; i++) { if (S === "play") updatePlay(0.05); else if (S === "drive") updateDrive(0.05); } }, get S() { return S; }, info: () => renderer.info.render, scene: () => world, G: () => G, P, rooms, act, Net, players: () => players, get uiOpen() { return uiOpen; }, set yaw(v) { yaw = v; }, set pitch(v) { pitch = v; }, keys, teleport(x, y, z) { P.x = x; P.feet = y; P.z = z; }, hs: Hs, guests: () => G.guests };
 })();

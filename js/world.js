@@ -48,8 +48,15 @@ const faces = (px, nx, pz, nz, other) => [px, nx, other, other, pz, nz];
 function makeDoor(id, o) {
   const pivot = new T.Group(); pivot.position.set(o.x, o.y, o.z); pivot.rotation.y = o.rot || 0; (o.parent || curParent || world).add(pivot);
   const w = o.w || 1.0, hgt = o.h || 2.3;
-  const mesh = box(w, hgt, 0.07, M(o.color || 0x3d1d18), w / 2, hgt / 2, 0, pivot);
-  box(0.05, 0.05, 0.18, M(0xc9a24a), w - 0.12, 1.05, 0, pivot);
+  const dcol = o.color || 0x3d1d18, dm = M(dcol), dd = M(new T.Color(dcol).multiplyScalar(0.72).getHex()), brass = M(0xc9a24a, { shininess: 60 });
+  const mesh = box(w - 0.01, hgt - 0.01, 0.045, dm, w / 2, hgt / 2, 0, pivot);
+  const pw = (w - 0.3) / 2;
+  for (const [py, ph] of [[hgt * 0.7, hgt * 0.34], [hgt * 0.3, hgt * 0.34]]) box(w - 0.3, ph, 0.052, dd, w / 2, py, 0, pivot);   // raised panels (visible both sides)
+  for (const sd of [-1, 1]) { box(0.05, 0.05, 0.012, brass, w - 0.1, 1.02, sd * 0.03, pivot); box(0.012, 0.02, 0.1, brass, w - 0.1, 1.02, sd * 0.07, pivot); box(0.1, 0.02, 0.02, brass, w - 0.16, 1.02, sd * 0.1, pivot); }
+  if (o.kind !== 'front') {
+    const fm = M(0x2c211b), fg = new T.Group(); fg.position.set(o.x, o.y, o.z); fg.rotation.y = o.rot || 0; (o.parent || curParent || world).add(fg);
+    box(0.07, hgt + 0.07, 0.2, fm, -0.035, (hgt + 0.07) / 2, 0, fg); box(0.07, hgt + 0.07, 0.2, fm, w + 0.035, (hgt + 0.07) / 2, 0, fg); box(w + 0.14, 0.07, 0.2, fm, w / 2, hgt + 0.035, 0, fg);
+  }
   const d = { id, pivot, mesh, w, base: o.rot || 0, dir: o.dir || 1, open: false, locked: !!o.locked, kind: o.kind, room: o.room || null, t: 0, cur: 0, col: o.col ? solid(o.col[0], o.col[1], o.col[2], o.col[3], o.y, o.y + hgt) : null, pos: o.soundPos || new T.Vector3(o.x, o.y + 1.2, o.z) };
   doors[id] = d; mesh.userData.door = d;
   inter(mesh, () => doorLabel(d), () => doorInteract(d), 2.4);
@@ -57,9 +64,9 @@ function makeDoor(id, o) {
 }
 function setDoorOpen(d, open, instant) {
   d.open = open; if (d.col) d.col.on = !open;
-  d.target = open ? d.dir * 1.45 : 0; if (instant) { d.cur = d.target; d.pivot.rotation.y = d.base + d.cur; }
+  d.target = open ? d.dir * 1.55 : 0; if (instant) { d.cur = d.target; d.pivot.rotation.y = d.base + d.cur; }
 }
-function updateDoors(dt) { for (const id in doors) { const d = doors[id]; if (d.target == null) continue; if (Math.abs(d.cur - d.target) > 0.001) { d.cur += clamp(d.target - d.cur, -dt * 3.2, dt * 3.2); d.pivot.rotation.y = d.base + d.cur; } } }
+function updateDoors(dt) { for (const id in doors) { const d = doors[id]; if (d.target == null) continue; const df = d.target - d.cur; if (Math.abs(df) > 0.001) { d.cur += Math.sign(df) * Math.min(Math.abs(df), Math.max(0.15 * dt, Math.abs(df) * dt * 6)); d.pivot.rotation.y = d.base + d.cur; } } }
 
 function makeContainer(id, meshes, kind, room, label, animFn) {
   const c = { id, kind, room, opened: false, loot: null, anim: animFn || null, label };
@@ -86,8 +93,15 @@ const BLD = {
 BLD.landPos = L => new T.Vector3(-4.9, L * H, -5.3);
 BLD.midPos = L => new T.Vector3(-6.9, L * H + 1.7, -11.4);
 
+/* curtains: parts = [{m, x0, x1, s0, s1}] — position.x and scale.x lerp between open (0) and closed (1) */
+function regCurtain(key, parts) { W.curt[key] = { parts, closed: false, t: 0 }; }
+function setCurtain(key, closed) { const c = W.curt[key]; if (c) c.closed = closed; }
+function updateCurtains(dt) {
+  for (const k in W.curt) { const c = W.curt[k], tg = c.closed ? 1 : 0, df = tg - c.t; if (Math.abs(df) < 0.001) continue; c.t += Math.sign(df) * Math.min(Math.abs(df), dt * 1.4); const e = c.t * c.t * (3 - 2 * c.t); for (const p of c.parts) { p.m.position.x = p.x0 + (p.x1 - p.x0) * e; p.m.scale.x = p.s0 + (p.s1 - p.s0) * e; } }
+}
+function curtainInter(key, meshes, range) { inter(meshes, () => W.curt[key] && W.curt[key].closed ? 'Открыть шторы' : 'Закрыть шторы', () => act({ a: 'curtain', key }), range || 2.4); }
 function buildWorld(seed) {
-  seedRng(seed);
+  seedRng(seed); W.curt = {};
   world = new T.Scene();
   world.background = new T.Color(0x0b0e17);
   world.fog = new T.FogExp2(0x0b0e17, 0.02);
@@ -143,7 +157,12 @@ function buildExterior() {
   } else {
     wallBox(-12, 5.85, -0.8, 6.15, 0, HT, plaster); wallBox(0.8, 5.85, 12, 6.15, 0, HT, plaster); wallBox(-0.8, 5.85, 0.8, 6.15, 2.4, HT, plaster);
   }
-  wallBox(-12.15, -12, -11.85, 6, 0, HT, plaster); wallBox(11.85, -12, 12.15, 6, 0, HT, plaster); wallBox(-12, -12.15, 12, -11.85, 0, HT, plaster);
+  wallBox(-12.15, -12, -11.85, 6, 0, HT, plaster); { // east wall: a real window at the end of every upper corridor
+    const cz0 = BLD.corrZ - 0.65, cz1 = BLD.corrZ + 0.65;
+    wallBox(11.85, -12, 12.15, 6, 0, H, plaster);
+    for (let L = 1; L <= 12; L++) { const yb = L * H, yt = L === 12 ? HT : yb + H;
+      wallBox(11.85, -12, 12.15, cz0, yb, yt, plaster); wallBox(11.85, cz1, 12.15, 6, yb, yt, plaster); wallBox(11.85, cz0, 12.15, cz1, yb, yb + 0.9, plaster); wallBox(11.85, cz0, 12.15, cz1, yb + 2.4, yt, plaster);
+      solid(11.85, cz0, 12.0, cz1, yb + 0.9, yb + 2.4); } } wallBox(-12, -12.15, 12, -11.85, 0, HT, plaster);
   box(25.2, 0.6, 19, M(0x2a2420), 0, HT + 0.3, -3);
   W.extG = new T.Group(); world.add(W.extG); curParent = W.extG;
   for (let L = 1; L < 13; L++) box(24.4, 0.18, 0.12, trim, 0, L * H, 6.2);
@@ -303,7 +322,7 @@ function buildStairCore() {
   const cx = (a, b) => (a + b) / 2;
   // outer walls, whole height
   wallBox(c.x0, c.z0, c.x0 + 0.15, c.z1, 0, HT, paint);
-  wallBox(c.x0 + 0.15, c.z0, c.x1, c.z0 + 0.15, 0, HT, paint);
+  wallBox(c.x0 + 0.15, c.z0 + 0.15, c.x1, c.z0 + 0.2, 0, HT, paint);   // inset 15 cm: the building shell's north wall already fills z -12.15..-11.85 (coplanar faces flickered)
   wallBox(-4.3, c.z0 + 0.15, c.x1, c.z1, 0, HT, paint);
   // south wall, level 0: skin behind the baked lobby wall, door gap x -5.5..-4.3
   const skin = (x0, x1, y0, y1, col) => { const m = box(x1 - x0, y1 - y0, 0.19, paint, cx(x0, x1), cx(y0, y1), -4.115); rayTargets.push(m); if (col) solid(x0, -4.2, x1, -4.0, y0, y1); };
@@ -381,14 +400,16 @@ function buildStairCore() {
   plane(-9.4 - c.x0, -6.4 - c.z0, ceilM, cx(c.x0, -9.4), 3.38, cx(c.z0, -6.4), 0, Math.PI / 2);
   plane(hl.x1 - hl.x0, hl.z1 - hl.z0, dbl, cx(hl.x0, hl.x1), bt, cx(hl.z0, hl.z1), 0, Math.PI / 2);
   plane(hl.x1 - hl.x0, hl.z1 - hl.z0, M(0x2e2d2a), cx(hl.x0, hl.x1), bs.y + 0.02, cx(hl.z0, hl.z1), 0, -Math.PI / 2);
-  plane(-9.4 - c.x0, -6.4 - c.z0, M(0x2e2d2a), cx(c.x0, -9.4), bs.y + 0.02, cx(c.z0, -6.4), 0, -Math.PI / 2).visible = false;
+  plane(-9.4 - c.x0, -6.4 - c.z0, M(0x2e2d2a), cx(c.x0, -9.4), bs.y + 0.02, cx(c.z0, -6.4), 0, -Math.PI / 2);
   box(13, 0.16, 0.16, M(0x5a5048), cx(hl.x0, hl.x1), -0.8, hl.z0 + 0.3); box(0.16, 0.16, 3.2, M(0x5a5048), -4, -1.0, cx(hl.z0, hl.z1));
   const boiler = new T.Mesh(cyl(0.7, 0.7, 2.0, 12), M(0x4a3a30)); boiler.position.set(2.8, bs.y + 1.0, -10.2); world.add(boiler); solid(2.1, -10.9, 3.5, -9.5, bs.y, bs.y + 2);
   // lights: one per walkable level + the basement
   W.stairLights = []; W.stairBulbs = [];
   for (let L = 0; L < 13; L++) {
     const b = box(0.25, 0.1, 0.25, B(0x221d18), -5.5, L * H + 3.05, -5.3); W.stairBulbs.push(b);
-    if (L <= 2) { const l = VPoint(0xd8e8d0, 0, 9, 1.5); l.position.set(-6.5, L * H + 2.7, -6.8); W.stairLights.push(l); }
+    const b2 = box(0.25, 0.1, 0.25, B(0x221d18), -6.9, L * H + 3.7, -11.3); W.stairBulbs.push(b2);   // above the mid landing
+    const l = VPoint(0xd8e8d0, 0, 9, 1.5); l.position.set(-6.5, L * H + 2.7, -6.8); W.stairLights.push(l);
+    const l2 = VPoint(0xd8e8d0, 0, 8, 1.5); l2.position.set(-6.9, L * H + 3.3, -11.0); W.stairLights.push(l2);
   }
   W.basLight = VPoint(0xb8c8b8, 0, 10, 1.5); W.basLight.position.set(-3, bs.y + 2.3, -10);
   W.stairPos = L => ({ landing: BLD.landPos(L), mid: BLD.midPos(L) });
@@ -424,16 +445,18 @@ function buildFloor(L) {
       const room = defs.find(d => d.side === side && mid > d.cx - 2.5 && mid < d.cx + 2.5);
       const roomMat = room ? themeWallMat(room.theme, b - a) : corrMat(b - a), cm = corrMat(b - a), other = M(0x2a2420);
       const mats = side > 0 ? faces(other, other, roomMat, cm, other) : faces(other, other, cm, roomMat, other);
-      const pa = i > 0 ? a - 0.004 : a, pb = i < xsSorted.length - 2 ? b + 0.004 : b;   // overlap hides hairline cracks between segments
-      if (inGap) wallBox(pa, z0, pb, z1, y + 2.3, y + 3.2, mats, true); else wallBox(pa, z0, pb, z1, y, y + 3.2, mats);
+      if (inGap) wallBox(a, z0, b, z1, y + 2.3, y + 3.2, mats, true); else wallBox(a, z0, b, z1, y, y + 3.2, mats);
+      { const yb0 = inGap ? y + 2.3 : y; box(b - a + 0.06, y + 3.2 - yb0, 0.05, M(0x5a4d40), (a + b) / 2, (yb0 + y + 3.2) / 2, (z0 + z1) / 2); }   // hidden backing: a hairline crack shows wall colour, not the void
     }
   };
   const closetGap = [8.9, 9.9], stairGap = [-5.5, -4.3];
   buildWall(1, defs.filter(d => d.side > 0).map(doorGap));
   buildWall(-1, defs.filter(d => d.side < 0).map(doorGap).concat([closetGap, stairGap]));
-  // corridor end window
-  plane(1.3, 1.5, B(0xffffff, { map: TX.night }), 11.84, y + 1.7, cz, -Math.PI / 2);
-  plane(2.4, 3.0, corrMat(2.4), 11.845, y + 1.5, cz, -Math.PI / 2);
+  // corridor end window: wallpaper skin with a real hole, sill, frame and glass
+  { const cm2 = corrMat(2.4), yb = y, wz0 = cz - 0.65, wz1 = cz + 0.65;
+    for (const [z0, z1, y0, y1] of [[cz - 1.2, wz0, 0, 3.2], [wz1, cz + 1.2, 0, 3.2], [wz0, wz1, 0, 0.9], [wz0, wz1, 2.4, 3.2]]) { const m = box(0.02, y1 - y0, z1 - z0, [cm2, cm2, cm2, cm2, cm2, cm2], 11.83, yb + (y0 + y1) / 2, (z0 + z1) / 2); }
+    const fm = M(0x2c211b); box(0.2, 0.05, 1.5, fm, 11.76, yb + 0.9, cz); box(0.06, 1.5, 0.06, fm, 11.97, yb + 1.65, wz0); box(0.06, 1.5, 0.06, fm, 11.97, yb + 1.65, wz1); box(0.06, 0.06, 1.3, fm, 11.97, yb + 2.4, cz); box(0.06, 0.06, 1.3, fm, 11.97, yb + 0.9, cz); box(0.04, 1.5, 0.04, fm, 11.97, yb + 1.65, cz);
+    plane(1.3, 1.5, M(0x9fb4d0, { transparent: true, opacity: 0.1, depthWrite: false }), 12.0, yb + 1.65, cz, -Math.PI / 2); }
   // elevator: west end of the corridor, directly above the lobby elevator (doors z -1.8..-0.2)
   wallBox(-8.7, zN - 0.15, -8.5, zS + 0.15, y, y + 3.2, M(0x6b6560));
   const ed = [box(0.04, 2.3, 0.72, M(0x8b8580, { shininess: 40 }), -8.47, y + 1.15, cz - 0.4), box(0.04, 2.3, 0.72, M(0x8b8580, { shininess: 40 }), -8.47, y + 1.15, cz + 0.4)];
@@ -476,22 +499,26 @@ function buildRoom(d) {
   const wx = (lx) => d.cx + s * lx, wz = (lz) => d.zc + s * lz;
   const lsolid = (lx0, lz0, lx1, lz1, ly0 = 0, ly1 = 3.2) => solid(wx(lx0), wz(lz0), wx(lx1), wz(lz1), y + ly0, y + ly1);
   const lbox = (w, h, dd, mat, x, yy, z) => { const m = box(w, h, dd, mat, x, yy, z, g); return m; };
-  const wall = themeWallMat(d.theme, 4.65), other = M(0x2a2420);
+  const D = d.window ? 5.55 : 4.65, wall = themeWallMat(d.theme, D), other = M(0x2a2420);
   // side + back walls (inner faces themed)
-  const wW = lbox(0.1, 3.2, 4.65, [wall, other, other, other, other, other], -2.55, 1.6, 2.325); rayTargets.push(wW); lsolid(-2.6, 0, -2.5, 4.65);
-  const wE = lbox(0.1, 3.2, 4.65, [other, wall, other, other, other, other], 2.55, 1.6, 2.325); rayTargets.push(wE); lsolid(2.5, 0, 2.6, 4.65);
+  const wW = lbox(0.1, 3.2, D, [wall, other, other, other, other, other], -2.55, 1.6, D / 2); rayTargets.push(wW); lsolid(-2.6, 0, -2.5, D);
+  const wE = lbox(0.1, 3.2, D, [other, wall, other, other, other, other], 2.55, 1.6, D / 2); rayTargets.push(wE); lsolid(2.5, 0, 2.6, D);
   const bm = [other, other, other, other, other, wall];
   if (d.window) {
-    for (const [bw, bh, bx, by] of [[3.35, 3.2, -0.825, 1.6], [0.35, 3.2, 2.325, 1.6], [1.3, 0.95, 1.5, 0.475], [1.3, 0.85, 1.5, 2.775]]) rayTargets.push(lbox(bw, bh, 0.1, bm, bx, by, 4.7));
-    const nm = M(0x5a4a3c); lbox(0.05, 1.4, 0.9, nm, 0.875, 1.65, 5.2); lbox(0.05, 1.4, 0.9, nm, 2.125, 1.65, 5.2); lbox(1.3, 0.05, 0.9, nm, 1.5, 0.975, 5.2); lbox(1.3, 0.05, 0.9, nm, 1.5, 2.325, 5.2);
-    for (const a of [-1, 1]) plane(0.45, 1.8, M(0x6a2a24, { side: T.DoubleSide }), 1.5 + a * 0.85, 1.6, 4.6, Math.PI, 0, g);
-    lbox(1.45, 0.06, 0.2, M(0x3a2519), 1.5, 0.95, 4.62);
+    // the facade (0.3 m, z 5.85..6.15) is the room's back wall: wallpaper skin on its inner face with a window hole, a deep sill for flowers
+    const zs = D + 0.09;
+    for (const [bw, bh, bx, by] of [[3.35, 3.2, -0.825, 1.6], [0.35, 3.2, 2.325, 1.6], [1.3, 0.95, 1.5, 0.475], [1.3, 0.85, 1.5, 2.775]]) rayTargets.push(lbox(bw, bh, 0.02, bm, bx, by, zs));
+    const sill = M(0x3a2519); lbox(1.5, 0.05, 0.34, sill, 1.5, 0.95, zs - 0.17); lbox(1.5, 0.08, 0.06, sill, 1.5, 0.89, zs - 0.03);
+    const pot = M(0x8a4a2a), leaf = M(0x3f7a3a); lbox(0.16, 0.14, 0.16, pot, 1.15, 1.04, zs - 0.15); lbox(0.22, 0.2, 0.22, leaf, 1.15, 1.2, zs - 0.15); lbox(0.12, 0.12, 0.12, pot, 1.95, 1.0, zs - 0.15); lbox(0.1, 0.22, 0.1, leaf, 1.95, 1.17, zs - 0.15);
+    lbox(1.9, 0.03, 0.03, M(0x2a2018), 1.5, 2.55, zs - 0.08);   // curtain rod
+    const cm = [-1, 1].map(a => plane(0.55, 1.75, M(0x6a2a24, { side: T.DoubleSide }), 1.5 + a * 0.72, 1.66, zs - 0.09, Math.PI, 0, g));
+    regCurtain('r' + d.num, cm.map((m, i) => ({ m, x0: 1.5 + (i ? 1 : -1) * 0.72, x1: 1.5 + (i ? 1 : -1) * 0.475, s0: 1, s1: 1.75 }))); curtainInter('r' + d.num, cm, 2.6);
   } else { const wB = lbox(5.0, 3.2, 0.1, bm, 0, 1.6, 4.7); rayTargets.push(wB); }
-  lsolid(-2.5, 4.65, 2.5, 4.75);
+  lsolid(-2.5, D, 2.5, D + 0.1);
   // floor + ceiling
   const floorTex = d.theme === 'kids' ? M(0x7a8a6a) : d.theme === 'velvet' ? M(0xffffff, { map: repTex(TX.carpet, 3, 3) }) : M(0xffffff, { map: repTex(TX.parquet, 3, 3) });
-  plane(5, 4.65, floorTex, 0, 0.013, 2.325, 0, -Math.PI / 2, g);
-  plane(5, 4.65, M(0x2b2620), 0, 3.2, 2.325, 0, Math.PI / 2, g);
+  plane(5, D, floorTex, 0, 0.013, D / 2, 0, -Math.PI / 2, g);
+  plane(5, D, M(0x2b2620), 0, 3.2, D / 2, 0, Math.PI / 2, g);
   // door
   const door = makeDoor('r' + d.num, { x: -1.9, y: 0, z: 0, w: 1.0, kind: 'room', room: d, dir: -1, parent: g, col: [wx(-1.9), wz(-0.07), wx(-0.9), wz(0.07)], color: 0x4a2a1c, locked: true, soundPos: new T.Vector3(wx(-1.4), y + 1.2, wz(0)) });
   if (door.col) { door.col.y0 = y; door.col.y1 = y + 2.4; }

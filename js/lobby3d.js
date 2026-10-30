@@ -80,6 +80,13 @@ function applyLobby3D(n0) {
   const ph = node.phoneHandset ? ctr(node.phoneHandset) : P3(0.55, 1.28, -1.95);
   const pg = W.handset && W.handset.parent; if (pg) pg.position.set(ph.x, ph.y - 0.17, ph.z);
   W.phonePos = ph.clone();
+  // caller-ID box (red digits) next to the phone; the game calls W.aonShow('312') while it rings
+  { const ac = document.createElement('canvas'); ac.width = 192; ac.height = 56; const at = new T.CanvasTexture(ac); at.anisotropy = 4;
+    const draw = txt => { const g = ac.getContext('2d'); g.fillStyle = '#1c0605'; g.fillRect(0, 0, 192, 56); if (txt) { g.font = 'bold 40px "PT Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = '#ff2a1a'; g.shadowBlur = 12; g.fillStyle = '#ff5a44'; g.fillText(String(txt), 96, 30); } else { g.fillStyle = '#3a0e0b'; g.fillRect(40, 26, 112, 4); } at.needsUpdate = true; };
+    draw('');
+    const grp = new T.Group(); const body = new T.Mesh(new T.BoxGeometry(0.24, 0.06, 0.13), new T.MeshLambertMaterial({ color: 0x302e2a })); grp.add(body);
+    const face = new T.Mesh(new T.PlaneGeometry(0.2, 0.058), new T.MeshBasicMaterial({ map: at })); face.rotation.x = -1.15; face.position.set(0, 0.037, 0.0); grp.add(face);
+    grp.position.set(ph.x - 0.04, ph.y - 0.1, ph.z + 0.27); world.add(grp); W.aonGrp = grp; W.aonShow = draw; }
   const nc = node.papers ? ctr(node.papers) : P3(-0.5, 0.83, -2.2); moveTo(W.px.note, nc.x, nc.y + 0.05, nc.z); W.px.note.rotation.set(-Math.PI / 2, 0, 0, 'YXZ'); W.px.note.scale.set(1.3, 1.3, 1.3);
   const lc = node.ledger ? ctr(node.ledger) : P3(0.1, 1.17, -2.07); moveTo(W.px.book, lc.x, lc.y, lc.z);
   moveTo(W.px.mon, 1.3, 1.31, -2.0); W.px.mon.scale.set(1.1, 1, 1);
@@ -116,6 +123,29 @@ function applyLobby3D(n0) {
     inter(m, () => window.isSitting && window.isSitting() ? null : label, () => sitDown(x, z, face, 1.18), 2.4);
   };
   seat(-5.6, 0.55, 1.3, 2.3, 0.9, 1.1, 'Сесть на диван', -5.6, 1.35, Math.PI);
+
+  // 8) curtains: the four baked panels (one mesh with the 'curtain' material) are re-cut into movable pieces that stretch to the window centre
+  try {
+    let cur = null; inst.traverse(o => { if (o.isMesh && o.material && o.material.name === 'curtain') cur = o; });
+    if (cur) {
+      const geo = cur.geometry, idx = geo.index ? geo.index.array : null, pos = geo.attributes.position;
+      const cl = [{ a: -6.8, b: -6.2, piv: -6.72, k: 'lobby0' }, { a: -4.4, b: -3.8, piv: -3.88, k: 'lobby0' }, { a: 3.0, b: 3.6, piv: 3.08, k: 'lobby1' }, { a: 5.4, b: 6.0, piv: 5.92, k: 'lobby1' }];
+      const tris = cl.map(() => []), nT = idx ? idx.length : pos.count;
+      for (let t = 0; t < nT; t += 3) { const i0 = idx ? idx[t] : t, i1 = idx ? idx[t + 1] : t + 1, i2 = idx ? idx[t + 2] : t + 2; const x = (pos.getX(i0) + pos.getX(i1) + pos.getX(i2)) / 3; const c = cl.findIndex(c => x >= c.a && x <= c.b); if (c >= 0) tris[c].push(i0, i1, i2); }
+      const parts = {};
+      cl.forEach((c, ci) => {
+        const ids = tris[ci]; if (!ids.length) return;
+        const map = new Map(), vs = []; ids.forEach(v => { if (!map.has(v)) { map.set(v, vs.length); vs.push(v); } });
+        const ng = new T.BufferGeometry();
+        for (const name of ['position', 'normal', 'uv', 'uv2']) { const at = geo.attributes[name]; if (!at) continue; const arr = new Float32Array(vs.length * at.itemSize); vs.forEach((v, n) => { for (let k = 0; k < at.itemSize; k++) arr[n * at.itemSize + k] = at.array[v * at.itemSize + k] - (name === 'position' && k === 0 ? c.piv : 0); }); ng.setAttribute(name, new T.BufferAttribute(arr, at.itemSize)); }
+        ng.setIndex(ids.map(v => map.get(v)));
+        const m = new T.Mesh(ng, cur.material); m.position.set(c.piv, 0, 0); m.frustumCulled = false; cur.parent.add(m);
+        (parts[c.k] = parts[c.k] || []).push({ m, x0: c.piv, x1: c.piv, s0: 1, s1: 3.4 });
+      });
+      cur.visible = false;
+      for (const k in parts) { regCurtain(k, parts[k]); const cx = k === 'lobby0' ? -5.3 : 4.5; const hit = new T.Mesh(new T.BoxGeometry(2.4, 2.6, 0.5), new T.MeshBasicMaterial()); hit.position.set(cx, 1.5, 5.5); hit.visible = false; world.add(hit); curtainInter(k, hit, 2.8); }
+    }
+  } catch (e) { console.warn('lobby curtains', e); }
   // 7) papers to read: guest ledger and the magazines
   if (node.ledger) inter(W.px.book, () => 'Книга гостей', () => toast('Последняя запись: «Спасибо за всё. Не уезжаю». Дата — через неделю от сегодняшней.', 5));
   const mg = (n, label, text) => { if (!node[n]) return; const c = ctr(node[n]); const m = new T.Mesh(new T.BoxGeometry(0.36, 0.1, 0.42), new T.MeshBasicMaterial()); m.position.copy(c); m.visible = false; world.add(m); inter(m, () => label, () => toast(text, 4.5), 2.4); };
