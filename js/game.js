@@ -86,6 +86,7 @@ let G = null; const Hs = {}; // G = shared state (same on every client), Hs = ho
 let players = {}; // id -> {id,name,char,idx}
 const avatars = {}, npcs = {};
 const P = { x: 0, z: 0, feet: 0, vy: 0 };
+let SIT = null;
 let yaw = 0, pitch = 0, crouch = false, flashOn = true, item = null, locked = false, myIdx = 0;
 let gameTime = 0, timers = [], anims = [];
 function later(s, fn) { timers.push({ t: gameTime + s, fn }); }
@@ -192,7 +193,7 @@ function assignPool() {
 }
 function setupWorld(seed) {
   resetWorld(); buildWorld(seed); worldBuilt = true;
-  hand = new T.Group(); hand.position.set(0.3, -0.3, -0.5); cam.add(hand); hand.visible = false;
+  Held.reset();   hand = new T.Group(); hand.position.set(0.3, -0.3, -0.5); cam.add(hand); hand.visible = false;
   lensMat = B(0xfff1cc);
   flash = new T.SpotLight(0xfff0d8, 0, 22, 0.45, 0.55, 1.3); flash.position.set(0.3, -0.27, -0.66); cam.add(flash); flash.target.position.set(0.1, -0.15, -6); cam.add(flash.target);
   remoteFlashes = [0, 1].map(() => { const s = new T.SpotLight(0xfff0d8, 0, 18, 0.45, 0.55, 1.3); world.add(s); world.add(s.target); return s; });
@@ -469,7 +470,7 @@ function restoreCheckpoint(cp) {
     Hs.mon = h.mon ? Object.assign({}, h.mon, { goal: fromVec(h.mon.goal), path: (h.mon.path || []).map(fromVec) }) : null;
   }
   if (G.monster) { monObj = makeMonster(); const m = cp.host && cp.host.mon; monObj.position.set(m ? m.x : -11.1, m ? m.y : 0, m ? m.z : 2.2); world.add(monObj); monSound = loopSound('breath', monObj.position); }
-  W.masterKey.visible = G.mkey == null; if (G.power) W.lever.rotation.z = -0.6;
+  setMK(G.mkey == null); if (G.power) W.lever.rotation.z = -0.6;
   const pos = cp.playerByIndex && cp.playerByIndex[myIdx];
   W.car.position.copy(drivePath.getPointAt(1)); W.car.lookAt(drivePath.getPointAt(0.99)); startPlay();
   if (pos) { P.x = pos[0]; P.feet = pos[1]; P.z = pos[2]; yaw = pos[3]; pitch = pos[4]; flashOn = !!(pos[5] & 1); crouch = !!(pos[5] & 2); }
@@ -551,23 +552,27 @@ function updatePlayer(dt) {
     ix += stick.x; iy += stick.y;
   }
   const len = Math.hypot(ix, iy); if (len > 1) { ix /= len; iy /= len; }
+  if (SIT) { if (len > 0.3 || keys.Space) { standUp(); } else { ix = iy = 0; } }
   const crouching = crouch || keys.ControlLeft;
   const moving = len > 0.08, run = (keys.ShiftLeft || keys.ShiftRight) && !crouching;
   const sp = crouching ? 1.3 : run ? 4.3 : 2.5, sy = Math.sin(yaw), cy = Math.cos(yaw);
+  if (!SIT) {
   P.x += (-sy * iy + cy * ix) * sp * dt; resolveCollisions(P, 0.28, P.feet);
   P.z += (-cy * iy - sy * ix) * sp * dt; resolveCollisions(P, 0.28, P.feet);
+  }
   const gnd = groundAt(P.x, P.z, P.feet);
   if (P.feet - gnd > 0.6) { P.vy -= 18 * dt; P.feet = Math.max(gnd, P.feet + P.vy * dt); if (P.feet === gnd) { P.vy = 0; sfx.step('hard'); } }
   else { P.feet = gnd; P.vy = 0; }
   noiseLevel = moving ? (crouching ? 0 : run ? 2 : 1) : 0;
   const rm = roomAt(P.x, P.feet, P.z);
   if (moving) { bob += dt * (run ? 11 : crouching ? 5 : 7.5); const s = Math.sin(bob); if (lastSin > 0 && s <= 0) sfx.step(rm && rm.wet ? 'water' : crouching ? 'soft' : (inLobbyArea(P.x, P.z, P.feet) || rm) ? 'soft' : 'hard'); lastSin = s; }
-  const eye = crouching ? 1.05 : 1.62;
+  const eye = SIT ? SIT.eye : crouching ? 1.05 : 1.62;
   const bobY = moving ? Math.sin(bob) * 0.03 * (reduced ? 0.2 : 1) : 0;
   shake = Math.max(0, shake - dt * 2);
   cam.position.set(P.x + (Math.random() - .5) * shake * 0.08, P.feet + eye + bobY, P.z + (Math.random() - .5) * shake * 0.08);
   cam.rotation.set(pitch, yaw, 0);
   hand.position.y = -0.3 + bobY * 0.4;
+  Held.bob(bobY * 0.4); Held.show(!uiOpen);
   // flashlight
   let fi = flashOn ? 1.7 : 0; if (flashOn && gameTime < (G.flickUntil || 0)) fi = Math.random() < 0.5 ? 0 : 0.5;
   flash.intensity = fi; lensMat.color.setHex(fi > 0 ? 0xfff1cc : 0x2a2a2a);
@@ -668,7 +673,7 @@ function applyEv(ev) {
       later(1.05, () => toast('Свет включился. Почти везде.', 3));
       return;
     }
-    case 'bell': sfx.bell(V3(-1.25, 1.2, -0.78)); anim(0.35, k => W.bellDome.position.y = 0.015 - Math.sin(k * Math.PI) * 0.01); return;
+    case 'bell': sfx.bell(W.bellPos || V3(-1.25, 1.2, -0.78)); anim(0.35, k => W.bellDome.position.y = 0.015 - Math.sin(k * Math.PI) * 0.01); return;
     case 'phone': {
       G.phone = ev.state; clearInterval(ringLoop);
       if (ev.state === 'ring') { const r = () => { sfx.ring(W.phonePos); anim(1.2, k => W.handset.position.y = 0.11 + (Math.sin(k * 60) > 0 ? 0.008 : 0) * (1 - k)); }; r(); ringLoop = setInterval(r, 3000); }
@@ -683,7 +688,7 @@ function applyEv(ev) {
       const g = G.guests[ev.id]; if (!g) return; g.state = ev.state;
       if (ev.room) { g.room = ev.room; g.correct = ev.correct; const r = rooms.find(x => x.num === ev.room); if (r) r.occupant = g.id; }
       if (['toRoom', 'leaving', 'wander'].includes(ev.state)) { const n = npcs[g.id]; if (n) { n.sit = false; n.seated = false; n.g.children.forEach(c => c.userData.limbs && standChar(c)); } }
-      if (ev.state === 'waiting') { sfx.bell(V3(-1.25, 1.2, -0.78)); toast(`У стойки гость: ${g.name}`, 3.5); }
+      if (ev.state === 'waiting') { sfx.bell(W.bellPos || V3(-1.25, 1.2, -0.78)); toast(`У стойки гость: ${g.name}`, 3.5); }
       if (ev.state === 'toRoom' && ev.by === Net.id) { if (ev.correct) { sfx.good(); typeSub(g.name.toUpperCase(), 'Идеально. Спасибо.', () => setTimeout(hideSub, 1500)); } else { sfx.bad(); typeSub(g.name.toUpperCase(), '…Ну ладно. Раз так.', () => setTimeout(hideSub, 1500)); } }
       if (ev.state === 'toRoom' && ev.by !== Net.id) toast(`${nameOf(ev.by)} заселил гостя в ${ev.room}`, 3);
       if (ev.state === 'inRoom') { const r = rooms.find(x => x.num === g.room); if (r) { r.dnd.visible = true; seatNPC(g, r); } }
@@ -693,7 +698,7 @@ function applyEv(ev) {
     }
     case 'guestFlag': { const g = G.guests[ev.id]; if (g) Object.assign(g, ev, { e: undefined, id: g.id }); return; }
     case 'desk': { const was = G.deskUser; G.deskUser = ev.by; if (ev.by === Net.id) openCheckin(ev.gid); else if (was === Net.id && uiOpen === 'checkin') closeCheckin(true); return; }
-    case 'mkey': { const prev = G.mkey; G.mkey = ev.holder; W.masterKey.visible = ev.holder == null; sfx.coin(); if (ev.holder === Net.id) toast('Мастер-ключ у тебя. Открывает любой номер.', 3.5); else if (prev === Net.id) toast('Ты повесил мастер-ключ на доску.', 2.5); else if (ev.holder) toast(`${nameOf(ev.holder)} взял мастер-ключ.`, 2.5); return; }
+    case 'mkey': { const prev = G.mkey; G.mkey = ev.holder; setMK(ev.holder == null); sfx.coin(); if (ev.holder === Net.id) toast('Мастер-ключ у тебя. Открывает любой номер.', 3.5); else if (prev === Net.id) toast('Ты повесил мастер-ключ на доску.', 2.5); else if (ev.holder) toast(`${nameOf(ev.holder)} взял мастер-ключ.`, 2.5); return; }
     case 'task': {
       const old = G.tasks[ev.t.id]; G.tasks[ev.t.id] = ev.t; const t = ev.t;
       if (t.done && (!old || !old.done)) { sfx.good(); toast(`Заявка выполнена: ${t.short}${t.by ? ' — ' + nameOf(t.by) : ''}`, 3); if (t.by === Net.id && (t.kind === 'towels')) setItem(null); }
@@ -1020,7 +1025,7 @@ function updateLights() {
   updateZones();
   let pw = G.power ? 1 : 0;
   if (G.power && G.powerFlicker != null) { const t = gameTime - G.powerFlicker; const seq = [[0.3, 0], [0.42, 1], [0.6, 0], [0.66, 1], [1.05, 0]]; const st = seq.find(x => t < x[0]); pw = st ? st[1] : 1; }
-  W.lobbyLights.forEach(L => L.intensity = 0.95 * pw); W.bulbs.forEach(b => b.material.color.setHex(pw ? 0xffe3a6 : 0x221d18));
+  W.lobbyLights.forEach(L => L.intensity = (W.lm3d ? 0.2 : 0.95) * pw); if (W.lm3d) LOBBY3D.update(pw, 0.016); W.bulbs.forEach(b => b.material.color.setHex(pw ? 0xffe3a6 : 0x221d18));
   W.corL.intensity = 0.55 * pw; W.corBulb.material.color.setHex(pw ? 0xd8ffe0 : 0x221d18);
   W.stairLights.forEach((l, i) => l.intensity = 0.6 * pw * localMul.stair[i]);
   W.stairBulbs.forEach((b, i) => b.material.color.setHex(pw && i <= 2 && localMul.stair[i] > 0.5 ? 0xe8f0e0 : 0x221d18));
@@ -1112,9 +1117,9 @@ const SCARES = {
   whisperRoom(lvl, rm) { noise(1.6, 0.12, 2400, 4, 'bandpass', 0, 0.4, V3(P.x - Math.sin(yaw) * -1.5, P.feet + 1.6, P.z - Math.cos(yaw) * -1.5)); },
   bear(lvl, rm) { if (rm && rm.bear) { rm.bear.lookAt(V3(P.x, rm.bear.getWorldPosition(new T.Vector3()).y, P.z)); sfx.bounce(rm.bear.getWorldPosition(new T.Vector3())); } },
   head(lvl, rm) { if (rm && rm.headGroup) { anim(1.2, k => rm.headGroup.rotation.y = -k * 0.9); noise(0.5, 0.15, 500, 3, 'bandpass', 0, 0.1, rm.headGroup.getWorldPosition(new T.Vector3())); } },
-  elevator() { const p = V3(-8.3, 1.4, 3.3); sfx.ding(p); anim(2.6, k => { const o = Math.sin(Math.min(1, k * 2.5) * Math.PI) * 0.35; W.elevDoors[0].position.z = 2.87 - o; W.elevDoors[1].position.z = 3.73 + o; }); },
+  elevator() { const p = W.elevPos || V3(-8.3, 1.4, 3.3); sfx.ding(p); anim(2.6, k => { const o = Math.sin(Math.min(1, k * 2.5) * Math.PI) * 0.35; W.elevDoors[0].position.z = 2.87 - o; W.elevDoors[1].position.z = 3.73 + o; }); },
   portrait() { if (W.portraitMat.map !== TX.portraitB) W.portraitMat.map = TX.portraitB; else W.portraitMat.map = TX.portraitA; },
-  bellSelf() { sfx.bell(V3(-1.25, 1.2, -0.78)); },
+  bellSelf() { sfx.bell(W.bellPos || V3(-1.25, 1.2, -0.78)); },
 };
 let elevKnocked = false;
 window.elevatorInteract = pos => { if (!elevKnocked) { elevKnocked = true; sfx.knock(3, pos); toast('«Не работает». Изнутри кто-то трижды постучал.', 4); } else toast('Тишина. Правило №3 говорит не открывать.', 3.5); };
@@ -1127,19 +1132,25 @@ window.doorLabel = d => {
   if (d.kind === 'room') { const r = d.room; if (!d.open && item === 'towels' && hasTask(r.num, 'towels')) return `Отдать полотенца в ${r.num}`; if (d.open) return 'Закрыть'; return r.occupant ? `Номер ${r.num} · гость внутри` : `Открыть номер ${r.num}`; }
   return d.open ? 'Закрыть' : 'Открыть';
 };
-window.doorInteract = d => { if (d.kind === 'room' && !d.open && item === 'towels' && hasTask(d.room.num, 'towels')) { act({ a: 'deliver', room: d.room.num }); return; } act({ a: 'door', id: d.id }); };
+window.doorInteract = d => { if (d.kind === 'room' && !d.open && item === 'towels' && hasTask(d.room.num, 'towels')) { act({ a: 'deliver', room: d.room.num }); setTimeout(() => { if (item === 'towels') setItem(null); }, 400); return; } act({ a: 'door', id: d.id }); };
 window.deskLabel = () => Object.values(G.guests).some(g => g.state === 'waiting' || g.state === 'sofa') ? 'Заселить гостя' : 'Стойка ресепшена';
 window.deskInteract = () => act({ a: 'desk' });
 window.phoneLabel = () => G.phone === 'ring' ? 'Снять трубку' : 'Телефон';
 window.masterKeyLabel = () => G.mkey == null ? 'Взять мастер-ключ' : G.mkey === Net.id ? 'Повесить мастер-ключ' : 'Доска с ключами';
 window.fuseLabel = () => !G.power ? 'Включить свет' : G.corrDark[1] ? 'Включить автомат 2-го этажа' : G.corrDark[2] ? 'Включить автомат 3-го этажа' : 'Электрощиток';
+window.sitDown = (x, z, face, eye, label) => {
+  if (SIT) return; SIT = { eye: eye || 1.15, x: P.x, z: P.z, face }; P.x = x; P.z = z; yaw = face; pitch = 0; toast(label || 'Ты сел. Любая клавиша движения — встать.', 2.2);
+};
+function standUp() { if (!SIT) return; P.x = SIT.x; P.z = SIT.z; SIT = null; }
 window.takeItem = kind => { setItem(kind); sfx.paper(); toast(kind === 'towels' ? 'Взял полотенца. Отнеси их к двери номера.' : 'Взял гаечный ключ.', 2.5); };
 window.sinkLabel = r => item === 'wrench' && hasTask(r.num, 'tap') ? 'Починить кран' : 'Раковина';
 window.sinkInteract = r => { if (item === 'wrench' && hasTask(r.num, 'tap')) { sfx.wrench(r.sinkPos); act({ a: 'fix', room: r.num }); } else toast(hasTask(r.num, 'tap') ? 'Кран течёт. Нужен гаечный ключ из «Служебного».' : 'Из крана капает. Медленно, как часы.', 3); };
 window.radioLabel = r => r.radio ? 'Выключить радио' : 'Радио';
 window.searchContainer = c => act({ a: 'search', id: c.id });
+const setMK = v => { if (W.setMK) W.setMK(v); else W.masterKey.visible = v; };
 function setItem(k) { item = k; renderInv(); }
-function renderInv() { const out = []; if (item) out.push(`В руках: <span>${item === 'towels' ? 'полотенца' : 'гаечный ключ'}</span>`); if (G.mkey === Net.id) out.push('<span>Мастер-ключ у тебя</span>'); if (Voice.mic) out.push(Voice.muted ? 'Микрофон выключен (V)' : 'Микрофон включён (V)'); $('#inv').innerHTML = out.join('<br>'); }
+function syncHeld() { try { Held.sync(cam, item, G && G.mkey === Net.id); } catch (e) {} }
+function renderInv() { const out = []; if (item) out.push(`В руках: <span>${item === 'towels' ? 'полотенца' : 'гаечный ключ'}</span>`); if (G.mkey === Net.id) out.push('<span>Мастер-ключ у тебя</span>'); if (Voice.mic) out.push(Voice.muted ? 'Микрофон выключен (V)' : 'Микрофон включён (V)'); $('#inv').innerHTML = out.join('<br>'); syncHeld(); }
 
 /* ---------- notes ---------- */
 window.openNote = (kind, i) => {
@@ -1270,7 +1281,7 @@ addEventListener('keydown', e => {
   if (S === 'drive' && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); skipDrive(); return; }
   if (S !== 'play') return;
   if (e.target && e.target.tagName === 'INPUT') return;
-  if (e.code === 'KeyE') { if (uiOpen === 'note') closeNote(); else if (!uiOpen && curInter) curInter.action(); }
+  if (e.code === 'KeyE') { if (SIT && !uiOpen) { standUp(); return; } if (uiOpen === 'note') closeNote(); else if (!uiOpen && curInter) curInter.action(); }
   else if (e.code === 'KeyF' && !uiOpen) { flashOn = !flashOn; sfx.tick(); }
   else if (e.code === 'KeyC' && !uiOpen) { crouch = !crouch; }
   else if (e.code === 'KeyV') { const m = voiceToggleMute(); if (m !== null) toast(m ? 'Микрофон выключен' : 'Микрофон включён', 1.5); }
@@ -1310,8 +1321,10 @@ $('#tC').onclick = () => { crouch = !crouch; };
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); if (cam) { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); } frameCreator(); });
 
 /* ================= BOOT ================= */
+Promise.race([LOBBY3D.promise, new Promise(r => setTimeout(r, 15000))]).catch(() => {}).then(() => {
 setupWorld(1);
 refreshMenuSave(); show('#loading', false); show('#menu', true); S = 'menu';
 requestAnimationFrame(loop);
+});
 window.__br = { spawnMon: () => spawnMonster(), sim(sec) { const n = Math.round(sec / 0.05); for (let i = 0; i < n; i++) { if (S === "play") updatePlay(0.05); else if (S === "drive") updateDrive(0.05); } }, get S() { return S; }, info: () => renderer.info.render, scene: () => world, G: () => G, P, rooms, act, Net, players: () => players, get uiOpen() { return uiOpen; }, set yaw(v) { yaw = v; }, set pitch(v) { pitch = v; }, keys, teleport(x, y, z) { P.x = x; P.feet = y; P.z = z; }, hs: Hs, guests: () => G.guests };
 })();

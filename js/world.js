@@ -155,6 +155,7 @@ function buildExterior() {
 }
 
 function buildLobby() {
+  const __n0 = world.children.length;
   const wl = len => M(0xffffff, { map: repTex(TX.wallLobby, Math.max(1, len / 1.6), 2) });
   const wlMat = wl(10), plain = M(0x2a2420);
   wallBox(7, -4, 7.2, 5.85, 0, 3.2, wlMat);
@@ -184,7 +185,7 @@ function buildLobby() {
   W.bellDome = new T.Mesh(new T.SphereGeometry(0.075, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), M(0xd6a24a, { shininess: 60, specular: 0x886633 })); W.bellDome.position.y = 0.015; bellG.add(W.bellDome);
   inter([bb, W.bellDome], () => 'Позвонить в звонок', () => act({ a: 'bell' }));
   // note + phone + book + monitor
-  const note = plane(0.22, 0.3, M(0xefe6d0), 0.25, 1.123, -0.78, 0.25, -Math.PI / 2);
+  const note = plane(0.22, 0.3, M(0xefe6d0), 0.25, 1.123, -0.78, 0.25, -Math.PI / 2); W.px = { note };
   inter(note, () => 'Прочитать записку', () => openNote('manager'));
   const phoneG = new T.Group(); phoneG.position.set(1.45, 1.12, -0.85); world.add(phoneG);
   const pb = new T.Mesh(new T.BoxGeometry(0.26, 0.08, 0.2), M(0x7a1e22)); pb.position.y = 0.04; phoneG.add(pb);
@@ -192,37 +193,41 @@ function buildLobby() {
   inter([pb, W.handset], () => phoneLabel(), () => act({ a: 'phone' }));
   W.phonePos = new T.Vector3(1.45, 1.2, -0.85);
   const book = box(0.44, 0.04, 0.32, M(0x2a3a2a), -2.3, 1.14, -0.85); plane(0.4, 0.28, M(0xe9e0c8), -2.3, 1.163, -0.85, 0, -Math.PI / 2);
-  inter(book, () => 'Книга гостей', () => toast('Последняя запись: «Спасибо за всё. Не уезжаю». Дата — через неделю от сегодняшней.', 5));
+  W.px.book = book; inter(book, () => 'Книга гостей', () => toast('Последняя запись: «Спасибо за всё. Не уезжаю». Дата — через неделю от сегодняшней.', 5));
   const mon = box(0.46, 0.38, 0.4, M(0xcfc6b0), 2.15, 1.31, -1.15);
-  inter(mon, () => 'Компьютер', () => toast('Архив броней открывается при заселении гостя: подойди к стойке, когда гость ждёт.', 4.5));
+  W.px.mon = mon; inter(mon, () => 'Компьютер', () => toast('Архив броней открывается при заселении гостя: подойди к стойке, когда гость ждёт.', 4.5));
   // behind the desk
   const kb = plane(2.2, 1.1, M(0xffffff, { map: TX.keys }), -0.3, 1.85, -3.89);
   W.masterKey = box(0.12, 0.2, 0.03, M(0xd6a24a, { shininess: 60 }), 0.55, 1.6, -3.86);
-  inter(kb, () => masterKeyLabel(), () => act({ a: 'masterkey' }));
+  W.px.kb = kb; inter(kb, () => masterKeyLabel(), () => act({ a: 'masterkey' }));
   inter(W.masterKey, () => masterKeyLabel(), () => act({ a: 'masterkey' }));
   plane(0.9, 0.34, B(0xffffff, { map: TX.clock }), -0.3, 2.7, -3.89);
   const plaque = plane(1.4, 0.875, M(0xffffff, { map: TX.plaque }), -4.6, 1.9, -3.89);
-  inter(plaque, () => 'Табличка с рейтингом', () => toast('«Рейтинг 1,2. Цель 4,5». Кто-то приписал карандашом: «удачи».', 4));
+  W.px.plaque = plaque; inter(plaque, () => 'Табличка с рейтингом', () => toast('«Рейтинг 1,2. Цель 4,5». Кто-то приписал карандашом: «удачи».', 4));
   // left wall: elevator + portrait + plants
   box(0.1, 2.55, 1.9, M(0x6b6560), -8.45, 1.27, 3.3);
   W.elevDoors = [box(0.06, 2.3, 0.84, M(0x8b8580, { shininess: 40 }), -8.38, 1.15, 2.87), box(0.06, 2.3, 0.84, M(0x8b8580, { shininess: 40 }), -8.38, 1.15, 3.73)];
   plane(0.6, 0.3, M(0xffffff, { map: TX.elev }), -8.34, 1.55, 3.3, Math.PI / 2);
-  inter(W.elevDoors, () => 'Лифт', () => elevatorInteract(new T.Vector3(-8.3, 1.4, 3.3)));
+  W.px.elev = W.elevDoors.slice(); inter(W.elevDoors, () => 'Лифт', () => elevatorInteract(W.elevPos || new T.Vector3(-8.3, 1.4, 3.3)));
   box(0.08, 1.16, 0.96, M(0xa07a32, { shininess: 30 }), -8.44, 1.95, -2.4);
   W.portraitMat = M(0xffffff, { map: TX.portraitA });
   const portrait = plane(0.78, 0.98, W.portraitMat, -8.39, 1.95, -2.4, Math.PI / 2);
-  inter(portrait, () => 'Портрет', () => toast(W.portraitMat.map === TX.portraitA ? 'Портрет основателя отеля. Взгляд тяжёлый.' : '…У него было лицо. Точно было.', 3.5));
+  W.px.portrait = portrait; inter(portrait, () => 'Портрет', () => toast(W.portraitMat.map === TX.portraitA ? 'Портрет основателя отеля. Взгляд тяжёлый.' : '…У него было лицо. Точно было.', 3.5));
   const plant = (x, z) => { box(0.5, 0.5, 0.5, M(0x6a3a22), x, 0.25, z); for (let i = 0; i < 5; i++) { const c = new T.Mesh(new T.ConeGeometry(0.16, 0.9, 5), M(0x2a4a2c)); c.position.set(x + rand(-.15, .15), 0.85, z + rand(-.15, .15)); c.rotation.set(rand(-.5, .5), 0, rand(-.5, .5)); world.add(c); } solid(x - 0.3, z - 0.3, x + 0.3, z + 0.3, 0, 1.5); };
   plant(-7.9, 5.2); plant(-7.9, -3.4);
   // right wall: rules, sofa, table
   const rules = plane(0.9, 1.15, M(0xffffff, { map: TX.rules }), 6.89, 1.7, -1.6, -Math.PI / 2); box(0.04, 1.2, 0.95, M(0x2a1a10), 6.93, 1.7, -1.6);
-  inter(rules, () => 'Прочитать правила', () => openNote('rules'));
+  W.px.rules = rules; inter(rules, () => 'Прочитать правила', () => openNote('rules'));
   const sofaM = M(0x4d5a3a);
   const sofa = [box(0.9, 0.45, 2.2, sofaM, 6.35, 0.25, 2.5), box(0.25, 0.9, 2.2, sofaM, 6.8, 0.55, 2.5), box(0.9, 0.6, 0.2, sofaM, 6.35, 0.35, 1.3), box(0.9, 0.6, 0.2, sofaM, 6.35, 0.35, 3.7)];
-  solid(5.9, 1.2, 7, 3.8, 0, 1); inter(sofa, () => 'Диван', () => toast('Продавлен в форме человека. И ещё тёплый.', 3.5));
+  solid(5.9, 1.2, 7, 3.8, 0, 1); W.px.sofa = sofa; inter(sofa, () => 'Диван', () => toast('Продавлен в форме человека. И ещё тёплый.', 3.5));
   box(0.7, 0.06, 1.1, woodDark, 4.9, 0.42, 2.5); for (const a of [-1, 1]) for (const b2 of [-1, 1]) box(0.05, 0.4, 0.05, woodDark, 4.9 + a * 0.3, 0.2, 2.5 + b2 * 0.48);
   solid(4.55, 1.95, 5.25, 3.05, 0, 0.5);
   W.sofaSeat = new T.Vector3(6.3, 0, 2.5);
+  if (window.LOBBY3D && LOBBY3D.ready) { try { applyLobby3D(__n0); } catch (e) { console.warn('lobby3d apply failed', e); } }
+  buildServiceWing();
+}
+function buildServiceWing() {
   // service door + corridor
   plane(0.9, 0.22, B(0xbbbbbb, { map: TX.service }), 5.5, 2.62, -3.89);
   makeDoor('service', { x: 4.9, y: 0, z: -4.1, w: 1.2, kind: 'service', col: [4.9, -4.16, 6.1, -4.04], dir: 1, color: 0x4b4f4a });
@@ -504,7 +509,7 @@ const WPN = {};
 function N(id, x, y, z) { WPN[id] = { id, p: new T.Vector3(x, y, z), n: [] }; }
 function E(a, b) { WPN[a].n.push(b); WPN[b].n.push(a); }
 function buildWaypoints() {
-  N('lb_st', -7.6, 0, 0); N('lb_a', -4, 0, 0.6); N('lb_b', 0, 0, 2.6); N('lb_c', 4, 0, 0.8); N('lb_door', 0, 0, 4.6); N('lb_srv', 5.5, 0, -3.0); N('sv1', 5.5, 0, -6.5); N('sv2', 5.5, 0, -10);
+  N('lb_st', -7.6, 0, 0); N('lb_a', -4, 0, 0.2); N('lb_b', 0, 0, 0.5); N('lb_c', 4, 0, 0.3); N('lb_door', 0, 0, 4.6); N('lb_srv', 5.5, 0, -3.0); N('sv1', 5.5, 0, -6.5); N('sv2', 5.5, 0, -10);
   E('lb_st', 'lb_a'); E('lb_a', 'lb_b'); E('lb_b', 'lb_c'); E('lb_b', 'lb_door'); E('lb_c', 'lb_srv'); E('lb_srv', 'sv1'); E('sv1', 'sv2');
   N('bs', -11.15, 0, 1.2);
   for (let L = 0; L <= 2; L++) {
