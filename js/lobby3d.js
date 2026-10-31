@@ -8,14 +8,14 @@ LOBBY3D.promise = new Promise(res => {
     const lm = new T.TextureLoader().load('assets/lightmap.png?v=20261031c', () => {
       const ok = g => { try { LOBBY3D.root = g.scene; LOBBY3D.lm = lm; prep(g.scene); LOBBY3D.ready = true; done(true); } catch (e) { console.warn('lobby3d prep', e); LOBBY3D.err = 'подготовка: ' + (e && e.message || e); done(false); } };
       const prog = x => { const el = document.getElementById('loading'); if (el && x && x.total) el.textContent = 'Готовим отель… ' + Math.round(100 * x.loaded / x.total) + '%'; };
-      const urls = ['assets/lobby.glb?v=20261031d', 'assets/lobby_model.json?v=20261031d', 'assets/lobby.json?v=20261031d'];
+      const urls = ['assets/lobby.glb?v=20261031e', 'assets/lobby_model.json?v=20261031e', 'assets/lobby.json?v=20261031e'];
       const tryLoad = i => {
         if (i >= urls.length) { done(false); return; }
         new T.GLTFLoader().load(urls[i], ok, prog, e => { console.warn('lobby3d load', urls[i], e); LOBBY3D.err = (LOBBY3D.err ? LOBBY3D.err + ' | ' : '') + urls[i].split('?')[0] + ': ' + (e && e.message || 'ошибка'); tryLoad(i + 1); });
       };
       // 1) no fetch(): the model travels as two <script> files (some hosts block fetch for page assets), decoded and parsed in memory
       const addScript = src => new Promise((r, j) => { const s = document.createElement('script'); s.src = src; s.onload = r; s.onerror = () => j(new Error(src)); document.head.appendChild(s); });
-      addScript('assets/lobby_glb1.js?v=20261031d').then(() => addScript('assets/lobby_glb2.js?v=20261031d')).then(() => {
+      addScript('assets/lobby_glb1.js?v=20261031e').then(() => addScript('assets/lobby_glb2.js?v=20261031e')).then(() => {
         const bin = atob(window.LOBBY_GLB_B64); window.LOBBY_GLB_B64 = null; const u8 = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
         new T.GLTFLoader().parse(u8.buffer, '', ok, e => { LOBBY3D.err = 'разбор модели: ' + (e && e.message || e); tryLoad(0); });
       }).catch(e => { LOBBY3D.err = 'скрипты модели: ' + (e && e.message || e); tryLoad(0); });
@@ -156,6 +156,9 @@ function applyLobby3D(n0) {
       inst.traverse(o => { if (o.isMesh && o.material && /^door(wood|brass)[LR]$/.test(o.material.name)) lm.push(o); });
       lm.forEach(o => { const side = o.material.name.slice(-1), pv = piv[side]; if (!pv.parent) { pv.position.set(HX[side], 0, HZ); o.parent.add(pv); } o.parent.remove(o); pv.add(o); o.position.set(-HX[side], 0, -HZ); });
       if (lm.length) {
+        // outside handles (the bake only has them on the lobby side) + wooden lining over the bare wallpaper reveals of the opening
+        const hm = new T.MeshLambertMaterial({ color: 0xb98a3a }), lining = new T.MeshLambertMaterial({ color: 0x3a1d16 });
+        for (const [bx, by, bw, bh] of [[-0.9925, 1.25, 0.015, 2.5], [0.9925, 1.25, 0.015, 2.5], [0, 2.4925, 2.0, 0.015]]) { const b = new T.Mesh(new T.BoxGeometry(bw, bh, 0.25), lining); b.position.set(bx, by, 6.035); world.add(b); }
         const oldP = fd.pivot; if (oldP) oldP.visible = false;
         inter(lm, () => doorLabel(fd), () => doorInteract(fd), 2.8);
         fd.pivot = { position: oldP.position, rotation: { set y(v) { piv.L.rotation.y = v; piv.R.rotation.y = -v; }, get y() { return piv.L.rotation.y; } }, visible: false };
