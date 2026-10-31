@@ -139,6 +139,15 @@ function applyLobby3D(n0) {
   for (const sx of [-6.4, -5.6, -4.8]) seat(sx, 0.55, 1.3, 0.76, 0.9, 1.1, 'Сесть на диван', sx, 1.4, Math.PI);
   seat(-3.5, 0.5, 2.5, 0.95, 0.95, 1.0, 'Сесть в кресло', -3.5, 2.5, Math.PI);
 
+  // 7a) the baked black backing plane behind the entrance door hid the street (and the lobby from outside): cut those triangles out once
+  try {
+    inst.traverse(o => {
+      if (!o.isMesh || !o.material || o.material.name !== 'black' || o.geometry.userData.cutDoorBack || !o.geometry.index) return;
+      o.geometry.userData.cutDoorBack = 1; const pos = o.geometry.attributes.position, ix = o.geometry.index.array, keep = [];
+      for (let t = 0; t < ix.length; t += 3) { const cx = (pos.getX(ix[t]) + pos.getX(ix[t + 1]) + pos.getX(ix[t + 2])) / 3, cy = (pos.getY(ix[t]) + pos.getY(ix[t + 1]) + pos.getY(ix[t + 2])) / 3, cz = (pos.getZ(ix[t]) + pos.getZ(ix[t + 1]) + pos.getZ(ix[t + 2])) / 3; if (Math.abs(cx) <= 1.2 && cy < 2.7 && cz > 5.88 && cz < 5.98) continue; keep.push(ix[t], ix[t + 1], ix[t + 2]); }
+      if (keep.length < ix.length) o.geometry.setIndex(keep);
+    });
+  } catch (e) { console.warn('door backing', e); }
   // 7b) front door: the two leaves (own materials in the bake) hang on hinges, so the drawn door itself opens
   try {
     const fd = doors && doors.front;
