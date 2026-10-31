@@ -141,7 +141,7 @@ function buildExterior() {
   post(-13, 27, true, false); post(8.5, 14, false, true);
   // hotel shell: 13 floors
   const HT = 13 * H, plaster = M(0x6b5848), trim = M(0x2c211b);
-  const B3 = typeof LOBBY3D !== 'undefined' && LOBBY3D.ready;
+  const B3 = typeof LOBBY3D !== 'undefined' && LOBBY3D.ready; W.winX = [-3.0, 4.5];
   if (B3) {
     // the baked lobby owns its south wall (single-sided, at z 5.85): outside skin sits behind it at z 6.10..6.15, with holes for the windows and the door
     const sk = (x0, x1, y0, y1) => { if (x1 - x0 < 0.01 || y1 - y0 < 0.01) return; box(x1 - x0, y1 - y0, 0.05, plaster, (x0 + x1) / 2, (y0 + y1) / 2, 6.125); solid(x0, 5.85, x1, 6.15, y0, y1); };

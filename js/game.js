@@ -1363,8 +1363,9 @@ $('#tC').onclick = () => { crouch = !crouch; };
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); if (cam) { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); } frameCreator(); });
 
 /* ================= BOOT ================= */
-Promise.race([LOBBY3D.promise, new Promise(r => setTimeout(r, 15000))]).catch(() => {}).then(() => {
-setupWorld(1);
+Promise.race([LOBBY3D.promise, new Promise(r => setTimeout(r, 90000))]).catch(() => {}).then(() => {
+try { setupWorld(1); } catch (e) { console.error(e); $('#loading').textContent = 'Ошибка запуска: ' + (e && e.message || e); return; }
+if (!LOBBY3D.ready) { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;font:11px monospace;color:#c88;background:#000a;padding:4px 8px'; d.textContent = 'запасной холл: ' + (LOBBY3D.err || 'не успел загрузиться'); document.body.appendChild(d); }
 refreshMenuSave(); show('#loading', false); show('#menu', true); S = 'menu';
 requestAnimationFrame(loop);
 });

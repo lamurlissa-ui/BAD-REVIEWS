@@ -6,8 +6,8 @@ LOBBY3D.promise = new Promise(res => {
   const done = ok => res(ok);
   try {
     const lm = new T.TextureLoader().load('assets/lightmap.png?v=20261031b', () => {
-      new T.GLTFLoader().load('assets/lobby.glb?v=20261031b', g => { try { LOBBY3D.root = g.scene; LOBBY3D.lm = lm; prep(g.scene); LOBBY3D.ready = true; done(true); } catch (e) { console.warn('lobby3d prep', e); done(false); } }, undefined, e => { console.warn('lobby3d glb', e); done(false); });
-    }, undefined, () => done(false));
+      new T.GLTFLoader().load('assets/lobby.glb?v=20261031b', g => { try { LOBBY3D.root = g.scene; LOBBY3D.lm = lm; prep(g.scene); LOBBY3D.ready = true; done(true); } catch (e) { console.warn('lobby3d prep', e); LOBBY3D.err = 'подготовка: ' + (e && e.message || e); done(false); } }, x => { const el = document.getElementById('loading'); if (el && x && x.total) el.textContent = 'Готовим отель… ' + Math.round(100 * x.loaded / x.total) + '%'; }, e => { console.warn('lobby3d glb', e); LOBBY3D.err = 'загрузка: ' + (e && e.message || e); done(false); });
+    }, undefined, () => { LOBBY3D.err = 'карта света не загрузилась'; done(false); });
     lm.flipY = false; lm.encoding = T.sRGBEncoding; lm.anisotropy = 4; LOBBY3D.lm = lm;
   } catch (e) { console.warn(e); done(false); }
 });
