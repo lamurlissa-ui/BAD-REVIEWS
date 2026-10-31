@@ -121,7 +121,6 @@ function buildExterior() {
   const dash = M(0xb59a52); for (let z = 40; z < 270; z += 7) plane(0.18, 3, dash, 0, 0.02, z, 0, -Math.PI / 2);
   plane(38, 30, M(0x26262c), 0, 0.012, 21, 0, -Math.PI / 2);
   const lineM = M(0x8c8a84); for (let x = -16; x <= 16; x += 3.2) { if (Math.abs(x) < 2.5) continue; plane(0.12, 4.5, lineM, x, 0.022, 11, 0, -Math.PI / 2); }
-  box(5, 0.12, 2.4, M(0x3a3634), 0, 0.06, 7.3);
   // trees
   const pts = [];
   for (let i = 0; i < 150; i++) { const s = Math.random() < .5 ? -1 : 1; pts.push([s * rand(7.5, 34), rand(42, 280)]); }
@@ -185,7 +184,9 @@ function buildExterior() {
   curParent = null;
   // porch + entrance
   box(3.4, 0.15, 1.9, trim, 0, 2.9, 7.0); for (const s of [-1, 1]) box(0.12, 2.85, 0.12, trim, s * 1.55, 1.43, 7.85);
-  W.porchBulb = box(0.24, 0.3, 0.24, B(0xffd59a), 1.15, 2.45, 6.3);
+  // entrance lantern: wall bracket + round frosted shade
+  box(0.05, 0.05, 0.22, M(0x2a2420), 1.15, 2.6, 6.26); box(0.16, 0.04, 0.16, M(0x2a2420), 1.15, 2.57, 6.36);
+  W.porchBulb = new T.Mesh(new T.SphereGeometry(0.14, 18, 12), B(0xffd59a)); W.porchBulb.position.set(1.15, 2.42, 6.36); world.add(W.porchBulb);
   W.porchL = VPoint(0xffcf8f, 0.9, 8, 1.5); W.porchL.position.set(1.15, 2.3, 6.9); 
   plane(0.8, 0.4, M(0xffffff, { map: TX.doorRate }), 1.75, 1.55, 6.17);
   if (typeof LOBBY3D !== 'undefined' && LOBBY3D.ready) makeDoor('front', { x: -1.0, y: 0, z: 6.0, w: 2.0, h: 2.4, kind: 'front', col: [-1.0, 5.88, 1.0, 6.12], dir: 1, color: 0x3d1d18 }); else makeDoor('front', { x: -0.8, y: 0, z: 6.0, w: 1.6, h: 2.4, kind: 'front', col: [-0.8, 5.88, 0.8, 6.12], dir: 1, color: 0x3d1d18 });
